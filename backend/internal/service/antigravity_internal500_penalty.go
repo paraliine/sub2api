@@ -45,6 +45,9 @@ func (s *AntigravityGatewayService) applyInternal500Penalty(
 		slog.Warn("internal500_account_disabled",
 			"account_id", account.ID, "account_name", account.Name, "consecutive_count", count)
 	case count == 2:
+		if account.IsAutoTempUnschedulableDisabled() {
+			return
+		}
 		until := time.Now().Add(internal500PenaltyTier2Duration)
 		reason := fmt.Sprintf("INTERNAL 500 x%d (temp unsched %v)", count, internal500PenaltyTier2Duration)
 		if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {
@@ -55,6 +58,9 @@ func (s *AntigravityGatewayService) applyInternal500Penalty(
 			"account_id", account.ID, "account_name", account.Name,
 			"duration", internal500PenaltyTier2Duration, "consecutive_count", count)
 	case count == 1:
+		if account.IsAutoTempUnschedulableDisabled() {
+			return
+		}
 		until := time.Now().Add(internal500PenaltyTier1Duration)
 		reason := fmt.Sprintf("INTERNAL 500 x%d (temp unsched %v)", count, internal500PenaltyTier1Duration)
 		if err := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); err != nil {

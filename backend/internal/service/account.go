@@ -354,6 +354,34 @@ func (a *Account) IsTempUnschedulableEnabled() bool {
 	return ok && enabled
 }
 
+func (a *Account) IsAutoTempUnschedulableDisabled() bool {
+	if a == nil || a.Credentials == nil {
+		return false
+	}
+	raw, ok := a.Credentials["disable_auto_temp_unschedulable"]
+	if !ok || raw == nil {
+		return false
+	}
+	switch v := raw.(type) {
+	case bool:
+		return v
+	case string:
+		parsed, err := strconv.ParseBool(strings.TrimSpace(v))
+		return err == nil && parsed
+	case json.Number:
+		i, err := v.Int64()
+		return err == nil && i != 0
+	case float64:
+		return v != 0
+	case int:
+		return v != 0
+	case int64:
+		return v != 0
+	default:
+		return false
+	}
+}
+
 func (a *Account) GetTempUnschedulableRules() []TempUnschedulableRule {
 	if a.Credentials == nil {
 		return nil

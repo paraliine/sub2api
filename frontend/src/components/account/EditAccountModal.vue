@@ -1118,6 +1118,22 @@
 
       <!-- Temp Unschedulable Rules -->
       <div class="border-t border-gray-200 pt-4 dark:border-dark-600 space-y-4">
+        <label class="flex items-start gap-3">
+          <input
+            v-model="disableAutoTempUnschedulable"
+            type="checkbox"
+            class="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          />
+          <span>
+            <span class="block text-sm font-medium text-gray-900 dark:text-white">
+              {{ t('admin.accounts.disableAutoTempUnschedulable') }}
+            </span>
+            <span class="mt-1 block text-xs text-gray-500 dark:text-gray-400">
+              {{ t('admin.accounts.disableAutoTempUnschedulableDesc') }}
+            </span>
+          </span>
+        </label>
+
         <div class="mb-3 flex items-center justify-between">
           <div>
             <label class="input-label mb-0">{{ t('admin.accounts.tempUnschedulable.title') }}</label>
@@ -1127,9 +1143,11 @@
           </div>
           <button
             type="button"
+            :disabled="disableAutoTempUnschedulable"
             @click="tempUnschedEnabled = !tempUnschedEnabled"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
+              disableAutoTempUnschedulable ? 'cursor-not-allowed opacity-50' : '',
               tempUnschedEnabled ? 'bg-primary-600' : 'bg-gray-200 dark:bg-dark-600'
             ]"
           >
@@ -1142,7 +1160,7 @@
           </button>
         </div>
 
-        <div v-if="tempUnschedEnabled" class="space-y-3">
+        <div v-if="tempUnschedEnabled && !disableAutoTempUnschedulable" class="space-y-3">
           <div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-900/20">
             <p class="text-xs text-blue-700 dark:text-blue-400">
               <Icon name="exclamationTriangle" size="sm" class="mr-1 inline" :stroke-width="2" />
@@ -2546,6 +2564,7 @@ const customErrorCodesEnabled = ref(false)
 const selectedErrorCodes = ref<number[]>([])
 const customErrorCodeInput = ref<number | null>(null)
 const interceptWarmupRequests = ref(false)
+const disableAutoTempUnschedulable = ref(false)
 const autoPauseOnExpired = ref(false)
 const autoPause5hThreshold = ref<number | null>(null)
 const autoPause7dThreshold = ref<number | null>(null)
@@ -2981,6 +3000,7 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   // Load intercept warmup requests setting (applies to all account types)
   const credentials = newAccount.credentials as Record<string, unknown> | undefined
   interceptWarmupRequests.value = credentials?.intercept_warmup_requests === true
+  disableAutoTempUnschedulable.value = credentials?.disable_auto_temp_unschedulable === true
   autoPauseOnExpired.value = newAccount.auto_pause_on_expired === true
   editVertexProjectId.value = ''
   editVertexClientEmail.value = ''
@@ -3448,6 +3468,15 @@ const buildTempUnschedRules = (rules: TempUnschedRuleForm[]) => {
 }
 
 const applyTempUnschedConfig = (credentials: Record<string, unknown>) => {
+  if (disableAutoTempUnschedulable.value) {
+    credentials.disable_auto_temp_unschedulable = true
+    delete credentials.temp_unschedulable_enabled
+    delete credentials.temp_unschedulable_rules
+    return true
+  }
+
+  delete credentials.disable_auto_temp_unschedulable
+
   if (!tempUnschedEnabled.value) {
     delete credentials.temp_unschedulable_enabled
     delete credentials.temp_unschedulable_rules

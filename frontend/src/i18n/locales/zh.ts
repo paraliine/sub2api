@@ -3800,6 +3800,9 @@ export default {
         '429 已有内置的限流处理机制。添加到自定义错误码后，将直接停止调度而非临时限流。确定要添加吗？',
       customErrorCodes529Warning:
         '529 已有内置的过载处理机制。添加到自定义错误码后，将直接停止调度而非临时标记过载。确定要添加吗？',
+      disableAutoTempUnschedulable: '禁止自动临时不可调度',
+      disableAutoTempUnschedulableDesc:
+        '启用后，系统自动冷却和临时不可调度规则都不会暂停该账号；不可恢复错误仍可能进入 error。',
       selectedErrorCodes: '已选择',
       noneSelectedUsesDefault: '未选择（使用默认策略）',
       enterErrorCode: '输入错误码 (100-599)',

@@ -3635,6 +3635,9 @@ export default {
         '429 already has built-in rate limit handling. Adding it to custom error codes will disable the account instead of temporary rate limiting. Are you sure?',
       customErrorCodes529Warning:
         '529 already has built-in overload handling. Adding it to custom error codes will disable the account instead of temporary overload marking. Are you sure?',
+      disableAutoTempUnschedulable: 'Disable Auto Temp Unschedulable',
+      disableAutoTempUnschedulableDesc:
+        'When enabled, system auto-cooldowns and temp unschedulable rules will not pause this account. Non-recoverable errors may still mark it as error.',
       selectedErrorCodes: 'Selected',
       noneSelectedUsesDefault: 'None selected (uses default policy)',
       enterErrorCode: 'Enter error code (100-599)',

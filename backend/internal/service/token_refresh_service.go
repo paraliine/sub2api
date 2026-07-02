@@ -351,17 +351,19 @@ func (s *TokenRefreshService) refreshWithRetry(ctx context.Context, account *Acc
 	if lastErr != nil {
 		reason += ": " + logredact.RedactText(lastErr.Error())
 	}
-	s.notifyAccountSchedulingBlocked(account, until, "token_refresh_retry_exhausted")
-	if setErr := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); setErr != nil {
-		slog.Warn("token_refresh.set_temp_unschedulable_failed",
-			"account_id", account.ID,
-			"error", setErr,
-		)
-	} else {
-		slog.Info("token_refresh.temp_unschedulable_set",
-			"account_id", account.ID,
-			"until", until.Format(time.RFC3339),
-		)
+	if !account.IsAutoTempUnschedulableDisabled() {
+		s.notifyAccountSchedulingBlocked(account, until, "token_refresh_retry_exhausted")
+		if setErr := s.accountRepo.SetTempUnschedulable(ctx, account.ID, until, reason); setErr != nil {
+			slog.Warn("token_refresh.set_temp_unschedulable_failed",
+				"account_id", account.ID,
+				"error", setErr,
+			)
+		} else {
+			slog.Info("token_refresh.temp_unschedulable_set",
+				"account_id", account.ID,
+				"until", until.Format(time.RFC3339),
+			)
+		}
 	}
 
 	return lastErr
