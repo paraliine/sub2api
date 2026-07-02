@@ -670,6 +670,115 @@
                 :placeholder="t('admin.groups.subscription.noLimit')"
               />
             </div>
+            <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+              <label class="input-label">{{
+                t("admin.groups.subscription.quotaSourceAccount")
+              }}</label>
+              <Select
+                v-model="createForm.quota_source_account_id"
+                :options="quotaSourceAccountOptions"
+                :placeholder="t('admin.groups.subscription.noQuotaSourceAccount')"
+              />
+              <p class="input-hint">
+                {{
+                  quotaSourceAccountsLoading
+                    ? t("admin.groups.subscription.loadingQuotaSourceAccounts")
+                    : t("admin.groups.subscription.quotaSourceAccountHint")
+                }}
+              </p>
+            </div>
+            <div class="grid gap-3 md:grid-cols-3">
+              <div>
+                <label class="input-label">{{
+                  t("admin.groups.subscription.officialFiveHourLimit")
+                }}</label>
+                <input
+                  v-model.number="createForm.official_quota_five_hour_limit_usd"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  class="input"
+                  placeholder="600"
+                />
+              </div>
+              <div>
+                <label class="input-label">{{
+                  t("admin.groups.subscription.officialDailyLimit")
+                }}</label>
+                <input
+                  v-model.number="createForm.official_quota_daily_limit_usd"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  class="input"
+                  placeholder="600"
+                />
+              </div>
+              <div>
+                <label class="input-label">{{
+                  t("admin.groups.subscription.officialWeeklyLimit")
+                }}</label>
+                <input
+                  v-model.number="createForm.official_quota_weekly_limit_usd"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  class="input"
+                  placeholder="2400"
+                />
+              </div>
+            </div>
+            <div class="space-y-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-700 dark:bg-dark-800 dark:text-gray-300">
+              <div class="font-medium text-gray-700 dark:text-gray-200">
+                {{ t("admin.groups.subscription.allocationEqual") }}
+              </div>
+              <label class="flex items-start gap-2">
+                <input
+                  v-model="createForm.quota_follow_official_reset"
+                  type="checkbox"
+                  class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span class="min-w-0">
+                  <span class="block font-medium text-gray-700 dark:text-gray-200">
+                    {{ t("admin.groups.subscription.followOfficialReset") }}
+                  </span>
+                  <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.groups.subscription.followOfficialResetHint") }}
+                  </span>
+                </span>
+              </label>
+              <label class="flex items-start gap-2">
+                <input
+                  v-model="createForm.quota_lag_reconcile_enabled"
+                  type="checkbox"
+                  class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span class="min-w-0">
+                  <span class="block font-medium text-gray-700 dark:text-gray-200">
+                    {{ t("admin.groups.subscription.lagReconcileAuto") }}
+                  </span>
+                  <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.groups.subscription.lagReconcileAutoHint") }}
+                  </span>
+                </span>
+              </label>
+              <div>
+                <label class="input-label">{{
+                  t("admin.groups.subscription.quotaCheckInterval")
+                }}</label>
+                <input
+                  v-model.number="createForm.quota_check_interval_minutes"
+                  type="number"
+                  min="1"
+                  step="1"
+                  class="input"
+                  placeholder="10"
+                />
+                <p class="input-hint">
+                  {{ t("admin.groups.subscription.quotaCheckIntervalHint") }}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1971,6 +2080,115 @@
                 :placeholder="t('admin.groups.subscription.noLimit')"
               />
             </div>
+            <div class="border-t border-gray-200 pt-4 dark:border-dark-600">
+              <label class="input-label">{{
+                t("admin.groups.subscription.quotaSourceAccount")
+              }}</label>
+              <Select
+                v-model="editForm.quota_source_account_id"
+                :options="quotaSourceAccountOptions"
+                :placeholder="t('admin.groups.subscription.noQuotaSourceAccount')"
+              />
+              <p class="input-hint">
+                {{
+                  quotaSourceAccountsLoading
+                    ? t("admin.groups.subscription.loadingQuotaSourceAccounts")
+                    : t("admin.groups.subscription.quotaSourceAccountHint")
+                }}
+              </p>
+            </div>
+            <div class="grid gap-3 md:grid-cols-3">
+              <div>
+                <label class="input-label">{{
+                  t("admin.groups.subscription.officialFiveHourLimit")
+                }}</label>
+                <input
+                  v-model.number="editForm.official_quota_five_hour_limit_usd"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  class="input"
+                  placeholder="600"
+                />
+              </div>
+              <div>
+                <label class="input-label">{{
+                  t("admin.groups.subscription.officialDailyLimit")
+                }}</label>
+                <input
+                  v-model.number="editForm.official_quota_daily_limit_usd"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  class="input"
+                  placeholder="600"
+                />
+              </div>
+              <div>
+                <label class="input-label">{{
+                  t("admin.groups.subscription.officialWeeklyLimit")
+                }}</label>
+                <input
+                  v-model.number="editForm.official_quota_weekly_limit_usd"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  class="input"
+                  placeholder="2400"
+                />
+              </div>
+            </div>
+            <div class="space-y-3 rounded-lg bg-gray-50 p-3 text-sm text-gray-700 dark:bg-dark-800 dark:text-gray-300">
+              <div class="font-medium text-gray-700 dark:text-gray-200">
+                {{ t("admin.groups.subscription.allocationEqual") }}
+              </div>
+              <label class="flex items-start gap-2">
+                <input
+                  v-model="editForm.quota_follow_official_reset"
+                  type="checkbox"
+                  class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span class="min-w-0">
+                  <span class="block font-medium text-gray-700 dark:text-gray-200">
+                    {{ t("admin.groups.subscription.followOfficialReset") }}
+                  </span>
+                  <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.groups.subscription.followOfficialResetHint") }}
+                  </span>
+                </span>
+              </label>
+              <label class="flex items-start gap-2">
+                <input
+                  v-model="editForm.quota_lag_reconcile_enabled"
+                  type="checkbox"
+                  class="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span class="min-w-0">
+                  <span class="block font-medium text-gray-700 dark:text-gray-200">
+                    {{ t("admin.groups.subscription.lagReconcileAuto") }}
+                  </span>
+                  <span class="mt-0.5 block text-xs text-gray-500 dark:text-gray-400">
+                    {{ t("admin.groups.subscription.lagReconcileAutoHint") }}
+                  </span>
+                </span>
+              </label>
+              <div>
+                <label class="input-label">{{
+                  t("admin.groups.subscription.quotaCheckInterval")
+                }}</label>
+                <input
+                  v-model.number="editForm.quota_check_interval_minutes"
+                  type="number"
+                  min="1"
+                  step="1"
+                  class="input"
+                  placeholder="10"
+                />
+                <p class="input-hint">
+                  {{ t("admin.groups.subscription.quotaCheckIntervalHint") }}
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -3082,7 +3300,7 @@ import { useI18n } from "vue-i18n";
 import { useAppStore } from "@/stores/app";
 import { useOnboardingStore } from "@/stores/onboarding";
 import { adminAPI } from "@/api/admin";
-import type { AdminGroup, GroupPlatform, SubscriptionType } from "@/types";
+import type { Account, AdminGroup, GroupPlatform, SubscriptionType } from "@/types";
 import type { Column } from "@/components/common/types";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import TablePageLayout from "@/components/layout/TablePageLayout.vue";
@@ -3301,6 +3519,8 @@ const copyAccountsGroupOptionsForEdit = computed(() => {
 });
 
 const groups = ref<AdminGroup[]>([]);
+const quotaSourceAccounts = ref<Account[]>([]);
+const quotaSourceAccountsLoading = ref(false);
 const loading = ref(false);
 const usageMap = ref<Map<number, { today_cost: number; total_cost: number }>>(
   new Map(),
@@ -3335,6 +3555,14 @@ const sortState = reactive({
   sort_by: "sort_order",
   sort_order: "asc" as "asc" | "desc",
 });
+
+const quotaSourceAccountOptions = computed(() => [
+  { value: null, label: t("admin.groups.subscription.noQuotaSourceAccount") },
+  ...quotaSourceAccounts.value.map((account) => ({
+    value: account.id,
+    label: `#${account.id} ${account.name}`,
+  })),
+]);
 
 let abortController: AbortController | null = null;
 
@@ -3376,6 +3604,16 @@ const createForm = reactive({
   daily_limit_usd: null as number | null,
   weekly_limit_usd: null as number | null,
   monthly_limit_usd: null as number | null,
+  quota_source_account_id: null as number | null,
+  official_quota_five_hour_limit_usd: null as number | null,
+  official_quota_daily_limit_usd: null as number | null,
+  official_quota_weekly_limit_usd: null as number | null,
+  quota_allocation_strategy: "active_subscription_equal" as
+    | "manual"
+    | "active_subscription_equal",
+  quota_follow_official_reset: true,
+  quota_lag_reconcile_enabled: true,
+  quota_check_interval_minutes: 10,
   // 图片生成计费配置
   allow_image_generation: false,
   image_rate_independent: false,
@@ -3708,6 +3946,16 @@ const editForm = reactive({
   daily_limit_usd: null as number | null,
   weekly_limit_usd: null as number | null,
   monthly_limit_usd: null as number | null,
+  quota_source_account_id: null as number | null,
+  official_quota_five_hour_limit_usd: null as number | null,
+  official_quota_daily_limit_usd: null as number | null,
+  official_quota_weekly_limit_usd: null as number | null,
+  quota_allocation_strategy: "active_subscription_equal" as
+    | "manual"
+    | "active_subscription_equal",
+  quota_follow_official_reset: true,
+  quota_lag_reconcile_enabled: true,
+  quota_check_interval_minutes: 10,
   // 图片生成计费配置
   allow_image_generation: false,
   image_rate_independent: false,
@@ -3913,6 +4161,43 @@ const loadCapacitySummary = async () => {
   }
 };
 
+const loadQuotaSourceAccounts = async (platform: GroupPlatform) => {
+  quotaSourceAccountsLoading.value = true;
+  try {
+    const response = await adminAPI.accounts.list(1, 200, {
+      platform,
+      status: "active",
+      sort_by: "id",
+      sort_order: "asc",
+      lite: "true",
+    });
+    quotaSourceAccounts.value = response.items;
+  } catch (error) {
+    quotaSourceAccounts.value = [];
+    console.error("Error loading quota source accounts:", error);
+  } finally {
+    quotaSourceAccountsLoading.value = false;
+  }
+};
+
+const ensureQuotaSourceAccountVisible = async (accountId: number | null) => {
+  if (!accountId || quotaSourceAccounts.value.some((account) => account.id === accountId)) {
+    return;
+  }
+  try {
+    const account = await adminAPI.accounts.getById(accountId);
+    quotaSourceAccounts.value = [account, ...quotaSourceAccounts.value];
+  } catch {
+    quotaSourceAccounts.value = [
+      {
+        id: accountId,
+        name: `#${accountId}`,
+      } as Account,
+      ...quotaSourceAccounts.value,
+    ];
+  }
+};
+
 let searchTimeout: ReturnType<typeof setTimeout>;
 const handleSearch = () => {
   clearTimeout(searchTimeout);
@@ -3942,6 +4227,7 @@ const handleSort = (key: string, order: 'asc' | 'desc') => {
 
 const openCreateModal = () => {
   showCreateModal.value = true;
+  loadQuotaSourceAccounts(createForm.platform);
   loadModelsListCandidates("create", 0, createForm.platform);
 };
 
@@ -3961,6 +4247,14 @@ const closeCreateModal = () => {
   createForm.daily_limit_usd = null;
   createForm.weekly_limit_usd = null;
   createForm.monthly_limit_usd = null;
+  createForm.quota_source_account_id = null;
+  createForm.official_quota_five_hour_limit_usd = null;
+  createForm.official_quota_daily_limit_usd = null;
+  createForm.official_quota_weekly_limit_usd = null;
+  createForm.quota_allocation_strategy = "active_subscription_equal";
+  createForm.quota_follow_official_reset = true;
+  createForm.quota_lag_reconcile_enabled = true;
+  createForm.quota_check_interval_minutes = 10;
   createForm.allow_image_generation = false;
   createForm.image_rate_independent = false;
   createForm.image_rate_multiplier = 1;
@@ -4010,6 +4304,15 @@ const normalizeImageRateMultiplier = (
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : 1;
 };
 
+const normalizePositiveInteger = (
+  value: number | string | null | undefined,
+  fallback: number,
+): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.floor(parsed));
+};
+
 const handleCreateGroup = async () => {
   if (!createForm.name.trim()) {
     appStore.showError(t("admin.groups.nameRequired"));
@@ -4031,6 +4334,23 @@ const handleCreateGroup = async () => {
       ),
       monthly_limit_usd: normalizeOptionalLimit(
         createForm.monthly_limit_usd as number | string | null,
+      ),
+      quota_source_account_id:
+        createForm.quota_source_account_id && createForm.quota_source_account_id > 0
+          ? createForm.quota_source_account_id
+          : null,
+      official_quota_five_hour_limit_usd: normalizeOptionalLimit(
+        createForm.official_quota_five_hour_limit_usd as number | string | null,
+      ),
+      official_quota_daily_limit_usd: normalizeOptionalLimit(
+        createForm.official_quota_daily_limit_usd as number | string | null,
+      ),
+      official_quota_weekly_limit_usd: normalizeOptionalLimit(
+        createForm.official_quota_weekly_limit_usd as number | string | null,
+      ),
+      quota_check_interval_minutes: normalizePositiveInteger(
+        createForm.quota_check_interval_minutes,
+        10,
       ),
       model_routing: convertRoutingRulesToApiFormat(
         createModelRoutingRules.value,
@@ -4057,8 +4377,21 @@ const handleCreateGroup = async () => {
     requestData.daily_limit_usd = emptyToNull(requestData.daily_limit_usd);
     requestData.weekly_limit_usd = emptyToNull(requestData.weekly_limit_usd);
     requestData.monthly_limit_usd = emptyToNull(requestData.monthly_limit_usd);
+    requestData.official_quota_five_hour_limit_usd = emptyToNull(
+      requestData.official_quota_five_hour_limit_usd,
+    );
+    requestData.official_quota_daily_limit_usd = emptyToNull(
+      requestData.official_quota_daily_limit_usd,
+    );
+    requestData.official_quota_weekly_limit_usd = emptyToNull(
+      requestData.official_quota_weekly_limit_usd,
+    );
     requestData.image_rate_multiplier = normalizeImageRateMultiplier(
       requestData.image_rate_multiplier,
+    );
+    requestData.quota_check_interval_minutes = normalizePositiveInteger(
+      requestData.quota_check_interval_minutes,
+      10,
     );
     await adminAPI.groups.create(requestData);
     appStore.showSuccess(t("admin.groups.groupCreated"));
@@ -4092,6 +4425,21 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.daily_limit_usd = group.daily_limit_usd;
   editForm.weekly_limit_usd = group.weekly_limit_usd;
   editForm.monthly_limit_usd = group.monthly_limit_usd;
+  editForm.quota_source_account_id = group.quota_source_account_id ?? null;
+  editForm.official_quota_five_hour_limit_usd =
+    group.official_quota_five_hour_limit_usd ?? null;
+  editForm.official_quota_daily_limit_usd =
+    group.official_quota_daily_limit_usd ?? null;
+  editForm.official_quota_weekly_limit_usd =
+    group.official_quota_weekly_limit_usd ?? null;
+  editForm.quota_allocation_strategy =
+    group.quota_allocation_strategy || "active_subscription_equal";
+  editForm.quota_follow_official_reset =
+    group.quota_follow_official_reset ?? true;
+  editForm.quota_lag_reconcile_enabled =
+    group.quota_lag_reconcile_enabled ?? true;
+  editForm.quota_check_interval_minutes =
+    group.quota_check_interval_minutes ?? 10;
   editForm.allow_image_generation = group.allow_image_generation ?? false;
   editForm.image_rate_independent = group.image_rate_independent ?? false;
   editForm.image_rate_multiplier = group.image_rate_multiplier ?? 1;
@@ -4125,6 +4473,8 @@ const handleEdit = async (group: AdminGroup) => {
   editForm.copy_accounts_from_group_ids = []; // 复制账号字段每次编辑时重置为空
   editForm.rpm_limit = group.rpm_limit ?? 0;
   resetModelsListState(editModelsListState, group.models_list_config);
+  await loadQuotaSourceAccounts(group.platform);
+  await ensureQuotaSourceAccountVisible(editForm.quota_source_account_id);
   // 加载模型路由规则（异步加载账号名称）
   editModelRoutingRules.value = await convertApiFormatToRoutingRules(
     group.model_routing,
@@ -4142,6 +4492,8 @@ const closeEditModal = () => {
   editingGroup.value = null;
   editModelRoutingRules.value = [];
   editForm.copy_accounts_from_group_ids = [];
+  editForm.quota_source_account_id = null;
+  editForm.quota_check_interval_minutes = 10;
   resetMessagesDispatchFormState(editForm);
   resetModelsListState(editModelsListState);
 };
@@ -4169,6 +4521,23 @@ const handleUpdateGroup = async () => {
       ),
       monthly_limit_usd: normalizeOptionalLimit(
         editForm.monthly_limit_usd as number | string | null,
+      ),
+      quota_source_account_id:
+        editForm.quota_source_account_id && editForm.quota_source_account_id > 0
+          ? editForm.quota_source_account_id
+          : 0,
+      official_quota_five_hour_limit_usd: normalizeOptionalLimit(
+        editForm.official_quota_five_hour_limit_usd as number | string | null,
+      ),
+      official_quota_daily_limit_usd: normalizeOptionalLimit(
+        editForm.official_quota_daily_limit_usd as number | string | null,
+      ),
+      official_quota_weekly_limit_usd: normalizeOptionalLimit(
+        editForm.official_quota_weekly_limit_usd as number | string | null,
+      ),
+      quota_check_interval_minutes: normalizePositiveInteger(
+        editForm.quota_check_interval_minutes,
+        10,
       ),
       fallback_group_id:
         editForm.fallback_group_id === null ? 0 : editForm.fallback_group_id,
@@ -4201,6 +4570,15 @@ const handleUpdateGroup = async () => {
     payload.daily_limit_usd = emptyToNull(payload.daily_limit_usd);
     payload.weekly_limit_usd = emptyToNull(payload.weekly_limit_usd);
     payload.monthly_limit_usd = emptyToNull(payload.monthly_limit_usd);
+    payload.official_quota_five_hour_limit_usd = emptyToNull(
+      payload.official_quota_five_hour_limit_usd,
+    );
+    payload.official_quota_daily_limit_usd = emptyToNull(
+      payload.official_quota_daily_limit_usd,
+    );
+    payload.official_quota_weekly_limit_usd = emptyToNull(
+      payload.official_quota_weekly_limit_usd,
+    );
     payload.image_rate_multiplier = normalizeImageRateMultiplier(
       payload.image_rate_multiplier,
     );
@@ -4288,6 +4666,8 @@ watch(
 watch(
   () => createForm.platform,
   (newVal) => {
+    createForm.quota_source_account_id = null;
+    loadQuotaSourceAccounts(newVal);
     if (!["anthropic", "antigravity"].includes(newVal)) {
       createForm.fallback_group_id_on_invalid_request = null;
     }
@@ -4306,6 +4686,10 @@ watch(
 watch(
   () => editForm.platform,
   (newVal) => {
+    if (showEditModal.value) {
+      editForm.quota_source_account_id = null;
+    }
+    loadQuotaSourceAccounts(newVal);
     if (!["anthropic", "antigravity"].includes(newVal)) {
       editForm.fallback_group_id_on_invalid_request = null;
     }

@@ -206,6 +206,14 @@ type CreateGroupInput struct {
 	DailyLimitUSD    *float64 // 日限额 (USD)
 	WeeklyLimitUSD   *float64 // 周限额 (USD)
 	MonthlyLimitUSD  *float64 // 月限额 (USD)
+	QuotaSourceAccountID          *int64
+	OfficialQuotaFiveHourLimitUSD *float64
+	OfficialQuotaDailyLimitUSD    *float64
+	OfficialQuotaWeeklyLimitUSD   *float64
+	QuotaAllocationStrategy       string
+	QuotaFollowOfficialReset      bool
+	QuotaLagReconcileEnabled      bool
+	QuotaCheckIntervalMinutes     *int
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration bool
 	ImageRateIndependent bool
@@ -248,6 +256,17 @@ type UpdateGroupInput struct {
 	DailyLimitUSD    *float64 // 日限额 (USD)
 	WeeklyLimitUSD   *float64 // 周限额 (USD)
 	MonthlyLimitUSD  *float64 // 月限额 (USD)
+	QuotaSourceAccountID          *int64
+	OfficialQuotaFiveHourLimitUSD *float64
+	OfficialQuotaDailyLimitUSD    *float64
+	OfficialQuotaWeeklyLimitUSD   *float64
+	OfficialQuotaFiveHourLimitSet bool
+	OfficialQuotaDailyLimitSet    bool
+	OfficialQuotaWeeklyLimitSet   bool
+	QuotaAllocationStrategy       string
+	QuotaFollowOfficialReset      *bool
+	QuotaLagReconcileEnabled      *bool
+	QuotaCheckIntervalMinutes     *int
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration *bool
 	ImageRateIndependent *bool
@@ -1814,6 +1833,15 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 	dailyLimit := normalizeLimit(input.DailyLimitUSD)
 	weeklyLimit := normalizeLimit(input.WeeklyLimitUSD)
 	monthlyLimit := normalizeLimit(input.MonthlyLimitUSD)
+	officialFiveHourLimit := normalizeLimit(input.OfficialQuotaFiveHourLimitUSD)
+	officialDailyLimit := normalizeLimit(input.OfficialQuotaDailyLimitUSD)
+	officialWeeklyLimit := normalizeLimit(input.OfficialQuotaWeeklyLimitUSD)
+	quotaSourceAccountID, err := s.normalizeQuotaSourceAccountID(ctx, input.QuotaSourceAccountID, platform)
+	if err != nil {
+		return nil, err
+	}
+	quotaAllocationStrategy := normalizeQuotaAllocationStrategy(input.QuotaAllocationStrategy)
+	quotaCheckIntervalMinutes := normalizeQuotaCheckIntervalMinutes(input.QuotaCheckIntervalMinutes)
 
 	// 图片价格：负数表示清除（使用默认价格），0 保留（表示免费）
 	imagePrice1K := normalizePrice(input.ImagePrice1K)
@@ -1894,6 +1922,14 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		DailyLimitUSD:                   dailyLimit,
 		WeeklyLimitUSD:                  weeklyLimit,
 		MonthlyLimitUSD:                 monthlyLimit,
+		QuotaSourceAccountID:            quotaSourceAccountID,
+		OfficialQuotaFiveHourLimitUSD:   officialFiveHourLimit,
+		OfficialQuotaDailyLimitUSD:      officialDailyLimit,
+		OfficialQuotaWeeklyLimitUSD:     officialWeeklyLimit,
+		QuotaAllocationStrategy:         quotaAllocationStrategy,
+		QuotaFollowOfficialReset:        input.QuotaFollowOfficialReset,
+		QuotaLagReconcileEnabled:        input.QuotaLagReconcileEnabled,
+		QuotaCheckIntervalMinutes:       quotaCheckIntervalMinutes,
 		AllowImageGeneration:            input.AllowImageGeneration,
 		ImageRateIndependent:            input.ImageRateIndependent,
 		ImageRateMultiplier:             imageRateMultiplier,
@@ -1947,6 +1983,11 @@ func (s *adminServiceImpl) CreateGroup(ctx context.Context, input *CreateGroupIn
 		}
 		group.AccountCount = int64(len(accountIDsToCopy))
 	}
+	if quotaSourceAccountID != nil {
+		if err := s.groupRepo.BindAccountsToGroup(ctx, group.ID, []int64{*quotaSourceAccountID}); err != nil {
+			return nil, fmt.Errorf("failed to bind quota source account to group: %w", err)
+		}
+	}
 
 	return group, nil
 }
@@ -1965,6 +2006,39 @@ func normalizePrice(price *float64) *float64 {
 		return nil
 	}
 	return price
+}
+
+func normalizeQuotaAllocationStrategy(strategy string) string {
+	switch strings.TrimSpace(strategy) {
+	case "active_subscription_equal":
+		return "active_subscription_equal"
+	default:
+		return "manual"
+	}
+}
+
+func normalizeQuotaCheckIntervalMinutes(minutes *int) int {
+	if minutes == nil {
+		return 10
+	}
+	if *minutes < 1 {
+		return 1
+	}
+	return *minutes
+}
+
+func (s *adminServiceImpl) normalizeQuotaSourceAccountID(ctx context.Context, accountID *int64, platform string) (*int64, error) {
+	if accountID == nil || *accountID <= 0 {
+		return nil, nil
+	}
+	account, err := s.accountRepo.GetByID(ctx, *accountID)
+	if err != nil {
+		return nil, fmt.Errorf("quota source account not found: %w", err)
+	}
+	if account.Platform != platform {
+		return nil, fmt.Errorf("quota source account platform mismatch: expected %s, got %s", platform, account.Platform)
+	}
+	return accountID, nil
 }
 
 // validateFallbackGroup 校验降级分组的有效性
@@ -2074,6 +2148,34 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 	group.DailyLimitUSD = normalizeLimit(input.DailyLimitUSD)
 	group.WeeklyLimitUSD = normalizeLimit(input.WeeklyLimitUSD)
 	group.MonthlyLimitUSD = normalizeLimit(input.MonthlyLimitUSD)
+	if input.QuotaSourceAccountID != nil {
+		quotaSourceAccountID, err := s.normalizeQuotaSourceAccountID(ctx, input.QuotaSourceAccountID, group.Platform)
+		if err != nil {
+			return nil, err
+		}
+		group.QuotaSourceAccountID = quotaSourceAccountID
+	}
+	if input.OfficialQuotaFiveHourLimitSet {
+		group.OfficialQuotaFiveHourLimitUSD = normalizeLimit(input.OfficialQuotaFiveHourLimitUSD)
+	}
+	if input.OfficialQuotaDailyLimitSet {
+		group.OfficialQuotaDailyLimitUSD = normalizeLimit(input.OfficialQuotaDailyLimitUSD)
+	}
+	if input.OfficialQuotaWeeklyLimitSet {
+		group.OfficialQuotaWeeklyLimitUSD = normalizeLimit(input.OfficialQuotaWeeklyLimitUSD)
+	}
+	if input.QuotaAllocationStrategy != "" {
+		group.QuotaAllocationStrategy = normalizeQuotaAllocationStrategy(input.QuotaAllocationStrategy)
+	}
+	if input.QuotaFollowOfficialReset != nil {
+		group.QuotaFollowOfficialReset = *input.QuotaFollowOfficialReset
+	}
+	if input.QuotaLagReconcileEnabled != nil {
+		group.QuotaLagReconcileEnabled = *input.QuotaLagReconcileEnabled
+	}
+	if input.QuotaCheckIntervalMinutes != nil {
+		group.QuotaCheckIntervalMinutes = normalizeQuotaCheckIntervalMinutes(input.QuotaCheckIntervalMinutes)
+	}
 	// 图片生成计费配置：负数表示清除（使用默认价格）
 	if input.AllowImageGeneration != nil {
 		group.AllowImageGeneration = *input.AllowImageGeneration
@@ -2241,6 +2343,11 @@ func (s *adminServiceImpl) UpdateGroup(ctx context.Context, id int64, input *Upd
 			if err := s.groupRepo.BindAccountsToGroup(ctx, id, accountIDsToCopy); err != nil {
 				return nil, fmt.Errorf("failed to bind accounts to group: %w", err)
 			}
+		}
+	}
+	if group.QuotaSourceAccountID != nil {
+		if err := s.groupRepo.BindAccountsToGroup(ctx, id, []int64{*group.QuotaSourceAccountID}); err != nil {
+			return nil, fmt.Errorf("failed to bind quota source account to group: %w", err)
 		}
 	}
 

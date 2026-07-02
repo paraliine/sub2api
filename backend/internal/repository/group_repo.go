@@ -83,6 +83,9 @@ func (r *groupRepository) Create(ctx context.Context, groupIn *service.Group) er
 		groupIn.ID = created.ID
 		groupIn.CreatedAt = created.CreatedAt
 		groupIn.UpdatedAt = created.UpdatedAt
+		if err := r.updateQuotaSourceConfig(ctx, groupIn); err != nil {
+			return err
+		}
 		if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
 			logger.LegacyPrintf("repository.group", "[SchedulerOutbox] enqueue group create failed: group=%d err=%v", groupIn.ID, err)
 		}
@@ -113,7 +116,11 @@ func (r *groupRepository) GetByIDLite(ctx context.Context, id int64) (*service.G
 	if err != nil {
 		return nil, translatePersistenceError(err, service.ErrGroupNotFound, nil)
 	}
-	return groupEntityToService(m), nil
+	out := groupEntityToService(m)
+	if err := r.loadQuotaSourceConfig(ctx, out); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) error {
@@ -212,6 +219,9 @@ func (r *groupRepository) Update(ctx context.Context, groupIn *service.Group) er
 		return translatePersistenceError(err, service.ErrGroupNotFound, service.ErrGroupExists)
 	}
 	groupIn.UpdatedAt = updated.UpdatedAt
+	if err := r.updateQuotaSourceConfig(ctx, groupIn); err != nil {
+		return err
+	}
 	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventGroupChanged, nil, &groupIn.ID, nil); err != nil {
 		logger.LegacyPrintf("repository.group", "[SchedulerOutbox] enqueue group update failed: group=%d err=%v", groupIn.ID, err)
 	}
@@ -277,6 +287,7 @@ func (r *groupRepository) ListWithFilters(ctx context.Context, params pagination
 	outGroups := make([]service.Group, 0, len(groups))
 	for i := range groups {
 		g := groupEntityToService(groups[i])
+		_ = r.loadQuotaSourceConfig(ctx, g)
 		outGroups = append(outGroups, *g)
 		groupIDs = append(groupIDs, g.ID)
 	}
@@ -369,6 +380,7 @@ func (r *groupRepository) listWithAccountCountSort(ctx context.Context, q *dbent
 	outGroups := make([]service.Group, len(page))
 	for i := range groups {
 		g := groupEntityToService(groups[i])
+		_ = r.loadQuotaSourceConfig(ctx, g)
 		c := counts[g.ID]
 		g.AccountCount = c.Total
 		g.ActiveAccountCount = c.Active
@@ -448,6 +460,7 @@ func (r *groupRepository) ListActive(ctx context.Context) ([]service.Group, erro
 	outGroups := make([]service.Group, 0, len(groups))
 	for i := range groups {
 		g := groupEntityToService(groups[i])
+		_ = r.loadQuotaSourceConfig(ctx, g)
 		outGroups = append(outGroups, *g)
 		groupIDs = append(groupIDs, g.ID)
 	}
@@ -478,6 +491,7 @@ func (r *groupRepository) ListActiveByPlatform(ctx context.Context, platform str
 	outGroups := make([]service.Group, 0, len(groups))
 	for i := range groups {
 		g := groupEntityToService(groups[i])
+		_ = r.loadQuotaSourceConfig(ctx, g)
 		outGroups = append(outGroups, *g)
 		groupIDs = append(groupIDs, g.ID)
 	}
@@ -497,6 +511,122 @@ func (r *groupRepository) ListActiveByPlatform(ctx context.Context, platform str
 
 func (r *groupRepository) ExistsByName(ctx context.Context, name string) (bool, error) {
 	return r.client.Group.Query().Where(group.NameEQ(name)).Exist(ctx)
+}
+
+func (r *groupRepository) updateQuotaSourceConfig(ctx context.Context, groupIn *service.Group) error {
+	if groupIn == nil || groupIn.ID <= 0 {
+		return nil
+	}
+	strategy := strings.TrimSpace(groupIn.QuotaAllocationStrategy)
+	if strategy == "" {
+		strategy = "manual"
+	}
+	checkInterval := groupIn.QuotaCheckIntervalMinutes
+	if checkInterval < 1 {
+		checkInterval = 10
+	}
+	accountID := nullInt64FromPtr(groupIn.QuotaSourceAccountID)
+	fiveHourLimit := nullFloat64FromPtr(groupIn.OfficialQuotaFiveHourLimitUSD)
+	dailyLimit := nullFloat64FromPtr(groupIn.OfficialQuotaDailyLimitUSD)
+	weeklyLimit := nullFloat64FromPtr(groupIn.OfficialQuotaWeeklyLimitUSD)
+
+	_, err := r.sql.ExecContext(ctx, `
+		UPDATE groups
+		SET quota_source_account_id = $2,
+			official_quota_five_hour_limit_usd = $3,
+			official_quota_daily_limit_usd = $4,
+			official_quota_weekly_limit_usd = $5,
+			quota_allocation_strategy = $6,
+			quota_follow_official_reset = $7,
+			quota_lag_reconcile_enabled = $8,
+			quota_check_interval_minutes = $9
+		WHERE id = $1 AND deleted_at IS NULL
+	`,
+		groupIn.ID,
+		accountID,
+		fiveHourLimit,
+		dailyLimit,
+		weeklyLimit,
+		strategy,
+		groupIn.QuotaFollowOfficialReset,
+		groupIn.QuotaLagReconcileEnabled,
+		checkInterval,
+	)
+	return err
+}
+
+func nullInt64FromPtr(value *int64) sql.NullInt64 {
+	if value == nil {
+		return sql.NullInt64{}
+	}
+	return sql.NullInt64{Int64: *value, Valid: true}
+}
+
+func nullFloat64FromPtr(value *float64) sql.NullFloat64 {
+	if value == nil {
+		return sql.NullFloat64{}
+	}
+	return sql.NullFloat64{Float64: *value, Valid: true}
+}
+
+func (r *groupRepository) loadQuotaSourceConfig(ctx context.Context, groupOut *service.Group) error {
+	if groupOut == nil || groupOut.ID <= 0 {
+		return nil
+	}
+
+	var (
+		accountID      sql.NullInt64
+		fiveHourLimit sql.NullFloat64
+		dailyLimit    sql.NullFloat64
+		weeklyLimit   sql.NullFloat64
+		strategy      string
+		followReset   bool
+		lagReconcile  bool
+		checkInterval int
+	)
+	err := scanSingleRow(ctx, r.sql, `
+		SELECT quota_source_account_id,
+			official_quota_five_hour_limit_usd,
+			official_quota_daily_limit_usd,
+			official_quota_weekly_limit_usd,
+			COALESCE(quota_allocation_strategy, 'manual'),
+			COALESCE(quota_follow_official_reset, FALSE),
+			COALESCE(quota_lag_reconcile_enabled, FALSE),
+			COALESCE(quota_check_interval_minutes, 10)
+		FROM groups
+		WHERE id = $1 AND deleted_at IS NULL
+	`, []any{groupOut.ID}, &accountID, &fiveHourLimit, &dailyLimit, &weeklyLimit, &strategy, &followReset, &lagReconcile, &checkInterval)
+	if errors.Is(err, sql.ErrNoRows) {
+		return service.ErrGroupNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if accountID.Valid {
+		groupOut.QuotaSourceAccountID = &accountID.Int64
+	} else {
+		groupOut.QuotaSourceAccountID = nil
+	}
+	if fiveHourLimit.Valid {
+		groupOut.OfficialQuotaFiveHourLimitUSD = &fiveHourLimit.Float64
+	} else {
+		groupOut.OfficialQuotaFiveHourLimitUSD = nil
+	}
+	if dailyLimit.Valid {
+		groupOut.OfficialQuotaDailyLimitUSD = &dailyLimit.Float64
+	} else {
+		groupOut.OfficialQuotaDailyLimitUSD = nil
+	}
+	if weeklyLimit.Valid {
+		groupOut.OfficialQuotaWeeklyLimitUSD = &weeklyLimit.Float64
+	} else {
+		groupOut.OfficialQuotaWeeklyLimitUSD = nil
+	}
+	groupOut.QuotaAllocationStrategy = strategy
+	groupOut.QuotaFollowOfficialReset = followReset
+	groupOut.QuotaLagReconcileEnabled = lagReconcile
+	groupOut.QuotaCheckIntervalMinutes = checkInterval
+	return nil
 }
 
 // ExistsByIDs 批量检查分组是否存在（仅检查未软删除记录）。

@@ -793,6 +793,8 @@ func groupEntityToService(g *dbent.Group) *service.Group {
 		DailyLimitUSD:                   g.DailyLimitUsd,
 		WeeklyLimitUSD:                  g.WeeklyLimitUsd,
 		MonthlyLimitUSD:                 g.MonthlyLimitUsd,
+		QuotaAllocationStrategy:         "manual",
+		QuotaCheckIntervalMinutes:       10,
 		AllowImageGeneration:            g.AllowImageGeneration,
 		ImageRateIndependent:            g.ImageRateIndependent,
 		ImageRateMultiplier:             g.ImageRateMultiplier,

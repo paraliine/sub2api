@@ -548,6 +548,14 @@ export interface AdminGroup extends Group {
   account_count?: number
   active_account_count?: number
   rate_limited_account_count?: number
+  quota_source_account_id?: number | null
+  official_quota_five_hour_limit_usd?: number | null
+  official_quota_daily_limit_usd?: number | null
+  official_quota_weekly_limit_usd?: number | null
+  quota_allocation_strategy?: 'manual' | 'active_subscription_equal'
+  quota_follow_official_reset?: boolean
+  quota_lag_reconcile_enabled?: boolean
+  quota_check_interval_minutes?: number
 
   // OpenAI Messages 调度配置（仅 openai 平台使用）
   default_mapped_model?: string
@@ -632,6 +640,14 @@ export interface CreateGroupRequest {
   daily_limit_usd?: number | null
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
+  quota_source_account_id?: number | null
+  official_quota_five_hour_limit_usd?: number | null
+  official_quota_daily_limit_usd?: number | null
+  official_quota_weekly_limit_usd?: number | null
+  quota_allocation_strategy?: 'manual' | 'active_subscription_equal'
+  quota_follow_official_reset?: boolean
+  quota_lag_reconcile_enabled?: boolean
+  quota_check_interval_minutes?: number
   allow_image_generation?: boolean
   image_rate_independent?: boolean
   image_rate_multiplier?: number
@@ -668,6 +684,14 @@ export interface UpdateGroupRequest {
   daily_limit_usd?: number | null
   weekly_limit_usd?: number | null
   monthly_limit_usd?: number | null
+  quota_source_account_id?: number | null
+  official_quota_five_hour_limit_usd?: number | null
+  official_quota_daily_limit_usd?: number | null
+  official_quota_weekly_limit_usd?: number | null
+  quota_allocation_strategy?: 'manual' | 'active_subscription_equal'
+  quota_follow_official_reset?: boolean
+  quota_lag_reconcile_enabled?: boolean
+  quota_check_interval_minutes?: number
   allow_image_generation?: boolean
   image_rate_independent?: boolean
   image_rate_multiplier?: number

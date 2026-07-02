@@ -71,6 +71,17 @@ func (f optionalLimitField) ToServiceInput() *float64 {
 	return &zero
 }
 
+func (f optionalLimitField) ToNullableServiceInput() *float64 {
+	if !f.set || f.value == nil {
+		return nil
+	}
+	return f.value
+}
+
+func (f optionalLimitField) IsSet() bool {
+	return f.set
+}
+
 // NewGroupHandler creates a new admin group handler
 func NewGroupHandler(adminService service.AdminService, dashboardService *service.DashboardService, groupCapacityService *service.GroupCapacityService) *GroupHandler {
 	return &GroupHandler{
@@ -92,6 +103,14 @@ type CreateGroupRequest struct {
 	DailyLimitUSD    optionalLimitField `json:"daily_limit_usd"`
 	WeeklyLimitUSD   optionalLimitField `json:"weekly_limit_usd"`
 	MonthlyLimitUSD  optionalLimitField `json:"monthly_limit_usd"`
+	QuotaSourceAccountID          *int64             `json:"quota_source_account_id"`
+	OfficialQuotaFiveHourLimitUSD optionalLimitField `json:"official_quota_five_hour_limit_usd"`
+	OfficialQuotaDailyLimitUSD    optionalLimitField `json:"official_quota_daily_limit_usd"`
+	OfficialQuotaWeeklyLimitUSD   optionalLimitField `json:"official_quota_weekly_limit_usd"`
+	QuotaAllocationStrategy       string             `json:"quota_allocation_strategy"`
+	QuotaFollowOfficialReset      bool               `json:"quota_follow_official_reset"`
+	QuotaLagReconcileEnabled      bool               `json:"quota_lag_reconcile_enabled"`
+	QuotaCheckIntervalMinutes     *int               `json:"quota_check_interval_minutes"`
 	// 图片生成计费配置（antigravity 和 gemini 平台使用，负数表示清除配置）
 	AllowImageGeneration            bool     `json:"allow_image_generation"`
 	ImageRateIndependent            bool     `json:"image_rate_independent"`
@@ -134,6 +153,14 @@ type UpdateGroupRequest struct {
 	DailyLimitUSD    optionalLimitField `json:"daily_limit_usd"`
 	WeeklyLimitUSD   optionalLimitField `json:"weekly_limit_usd"`
 	MonthlyLimitUSD  optionalLimitField `json:"monthly_limit_usd"`
+	QuotaSourceAccountID          *int64             `json:"quota_source_account_id"`
+	OfficialQuotaFiveHourLimitUSD optionalLimitField `json:"official_quota_five_hour_limit_usd"`
+	OfficialQuotaDailyLimitUSD    optionalLimitField `json:"official_quota_daily_limit_usd"`
+	OfficialQuotaWeeklyLimitUSD   optionalLimitField `json:"official_quota_weekly_limit_usd"`
+	QuotaAllocationStrategy       string             `json:"quota_allocation_strategy"`
+	QuotaFollowOfficialReset      *bool              `json:"quota_follow_official_reset"`
+	QuotaLagReconcileEnabled      *bool              `json:"quota_lag_reconcile_enabled"`
+	QuotaCheckIntervalMinutes     *int               `json:"quota_check_interval_minutes"`
 	// 图片生成计费配置（antigravity 和 gemini 平台使用，负数表示清除配置）
 	AllowImageGeneration            *bool    `json:"allow_image_generation"`
 	ImageRateIndependent            *bool    `json:"image_rate_independent"`
@@ -290,6 +317,14 @@ func (h *GroupHandler) Create(c *gin.Context) {
 		DailyLimitUSD:                   req.DailyLimitUSD.ToServiceInput(),
 		WeeklyLimitUSD:                  req.WeeklyLimitUSD.ToServiceInput(),
 		MonthlyLimitUSD:                 req.MonthlyLimitUSD.ToServiceInput(),
+		QuotaSourceAccountID:            req.QuotaSourceAccountID,
+		OfficialQuotaFiveHourLimitUSD:   req.OfficialQuotaFiveHourLimitUSD.ToNullableServiceInput(),
+		OfficialQuotaDailyLimitUSD:      req.OfficialQuotaDailyLimitUSD.ToNullableServiceInput(),
+		OfficialQuotaWeeklyLimitUSD:     req.OfficialQuotaWeeklyLimitUSD.ToNullableServiceInput(),
+		QuotaAllocationStrategy:         req.QuotaAllocationStrategy,
+		QuotaFollowOfficialReset:        req.QuotaFollowOfficialReset,
+		QuotaLagReconcileEnabled:        req.QuotaLagReconcileEnabled,
+		QuotaCheckIntervalMinutes:       req.QuotaCheckIntervalMinutes,
 		AllowImageGeneration:            req.AllowImageGeneration,
 		ImageRateIndependent:            req.ImageRateIndependent,
 		ImageRateMultiplier:             req.ImageRateMultiplier,
@@ -347,6 +382,17 @@ func (h *GroupHandler) Update(c *gin.Context) {
 		DailyLimitUSD:                   req.DailyLimitUSD.ToServiceInput(),
 		WeeklyLimitUSD:                  req.WeeklyLimitUSD.ToServiceInput(),
 		MonthlyLimitUSD:                 req.MonthlyLimitUSD.ToServiceInput(),
+		QuotaSourceAccountID:            req.QuotaSourceAccountID,
+		OfficialQuotaFiveHourLimitUSD:   req.OfficialQuotaFiveHourLimitUSD.ToNullableServiceInput(),
+		OfficialQuotaDailyLimitUSD:      req.OfficialQuotaDailyLimitUSD.ToNullableServiceInput(),
+		OfficialQuotaWeeklyLimitUSD:     req.OfficialQuotaWeeklyLimitUSD.ToNullableServiceInput(),
+		OfficialQuotaFiveHourLimitSet:   req.OfficialQuotaFiveHourLimitUSD.IsSet(),
+		OfficialQuotaDailyLimitSet:      req.OfficialQuotaDailyLimitUSD.IsSet(),
+		OfficialQuotaWeeklyLimitSet:     req.OfficialQuotaWeeklyLimitUSD.IsSet(),
+		QuotaAllocationStrategy:         req.QuotaAllocationStrategy,
+		QuotaFollowOfficialReset:        req.QuotaFollowOfficialReset,
+		QuotaLagReconcileEnabled:        req.QuotaLagReconcileEnabled,
+		QuotaCheckIntervalMinutes:       req.QuotaCheckIntervalMinutes,
 		AllowImageGeneration:            req.AllowImageGeneration,
 		ImageRateIndependent:            req.ImageRateIndependent,
 		ImageRateMultiplier:             req.ImageRateMultiplier,

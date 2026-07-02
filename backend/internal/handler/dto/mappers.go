@@ -153,6 +153,14 @@ func GroupFromServiceAdmin(g *service.Group) *AdminGroup {
 		AccountCount:                g.AccountCount,
 		ActiveAccountCount:          g.ActiveAccountCount,
 		RateLimitedAccountCount:     g.RateLimitedAccountCount,
+		QuotaSourceAccountID:        g.QuotaSourceAccountID,
+		OfficialQuotaFiveHourLimitUSD: g.OfficialQuotaFiveHourLimitUSD,
+		OfficialQuotaDailyLimitUSD:  g.OfficialQuotaDailyLimitUSD,
+		OfficialQuotaWeeklyLimitUSD: g.OfficialQuotaWeeklyLimitUSD,
+		QuotaAllocationStrategy:     g.QuotaAllocationStrategy,
+		QuotaFollowOfficialReset:    g.QuotaFollowOfficialReset,
+		QuotaLagReconcileEnabled:    g.QuotaLagReconcileEnabled,
+		QuotaCheckIntervalMinutes:   g.QuotaCheckIntervalMinutes,
 		SortOrder:                   g.SortOrder,
 	}
 	if len(g.AccountGroups) > 0 {

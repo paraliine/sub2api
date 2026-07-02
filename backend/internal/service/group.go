@@ -25,6 +25,14 @@ type Group struct {
 	DailyLimitUSD       *float64
 	WeeklyLimitUSD      *float64
 	MonthlyLimitUSD     *float64
+	QuotaSourceAccountID            *int64
+	OfficialQuotaFiveHourLimitUSD   *float64
+	OfficialQuotaDailyLimitUSD      *float64
+	OfficialQuotaWeeklyLimitUSD     *float64
+	QuotaAllocationStrategy         string
+	QuotaFollowOfficialReset        bool
+	QuotaLagReconcileEnabled        bool
+	QuotaCheckIntervalMinutes       int
 	DefaultValidityDays int
 
 	// 图片生成计费配置（antigravity 和 gemini 平台使用）

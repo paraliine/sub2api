@@ -148,6 +148,14 @@ type AdminGroup struct {
 	AccountCount            int64          `json:"account_count,omitempty"`
 	ActiveAccountCount      int64          `json:"active_account_count,omitempty"`
 	RateLimitedAccountCount int64          `json:"rate_limited_account_count,omitempty"`
+	QuotaSourceAccountID          *int64   `json:"quota_source_account_id"`
+	OfficialQuotaFiveHourLimitUSD *float64 `json:"official_quota_five_hour_limit_usd"`
+	OfficialQuotaDailyLimitUSD    *float64 `json:"official_quota_daily_limit_usd"`
+	OfficialQuotaWeeklyLimitUSD   *float64 `json:"official_quota_weekly_limit_usd"`
+	QuotaAllocationStrategy       string   `json:"quota_allocation_strategy"`
+	QuotaFollowOfficialReset      bool     `json:"quota_follow_official_reset"`
+	QuotaLagReconcileEnabled      bool     `json:"quota_lag_reconcile_enabled"`
+	QuotaCheckIntervalMinutes     int      `json:"quota_check_interval_minutes"`
 
 	// 分组排序
 	SortOrder int `json:"sort_order"`
