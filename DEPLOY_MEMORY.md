@@ -41,6 +41,23 @@ services:
     image: sub2api:pxx-latest
 ```
 
+## Sync Upstream Before Deploy
+
+Keep `main` clean and synchronized with upstream. Deploy custom changes from `dev`.
+
+```bash
+git checkout main
+git pull origin main
+git fetch upstream
+git merge upstream/main
+git push origin main
+
+git checkout dev
+git merge main
+```
+
+Resolve any merge conflicts and run the relevant local checks before syncing code to the server.
+
 ## Sync Code
 
 From local repo root:
@@ -106,4 +123,3 @@ else
   docker rmi pxx-latest:latest
 fi
 ```
-

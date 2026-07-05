@@ -123,14 +123,13 @@
                   }"
                 ></div>
               </div>
-              <p
-                v-if="subscription.five_hour_window_start"
-                class="text-xs text-gray-500 dark:text-dark-400"
-              >
+              <p class="text-xs text-gray-500 dark:text-dark-400">
                 {{
-                  t('userSubscriptions.resetIn', {
-                    time: formatResetTime(subscription.five_hour_window_start, 5)
-                  })
+                  subscription.five_hour_window_start
+                    ? t('userSubscriptions.resetIn', {
+                        time: formatResetTime(subscription.five_hour_window_start, 5)
+                      })
+                    : t('userSubscriptions.firstUseStartsTimer')
                 }}
               </p>
             </div>

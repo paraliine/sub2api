@@ -232,7 +232,7 @@
                     ${{ row.group?.five_hour_limit_usd?.toFixed(2) }}
                   </span>
                 </div>
-                <div class="reset-info" v-if="row.five_hour_window_start">
+                <div class="reset-info">
                   <svg
                     class="h-3 w-3"
                     fill="none"
@@ -246,7 +246,7 @@
                       d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"
                     />
                   </svg>
-                  <span>{{ formatResetTime(row.five_hour_window_start, 'five_hour') }}</span>
+                  <span>{{ formatFiveHourWindowText(row) }}</span>
                 </div>
               </div>
 
@@ -1383,6 +1383,14 @@ const formatDailyUsageWindow = (subscription: UserSubscription): string => {
   }
 
   return formatResetTime(subscription.daily_window_start, 'daily')
+}
+
+const formatFiveHourWindowText = (subscription: UserSubscription): string => {
+  if (!subscription.five_hour_window_start) {
+    return t('admin.subscriptions.firstUseStartsTimer')
+  }
+
+  return formatResetTime(subscription.five_hour_window_start, 'five_hour')
 }
 
 // Format reset time based on window start and period type

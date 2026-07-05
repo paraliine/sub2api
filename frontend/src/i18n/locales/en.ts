@@ -3004,6 +3004,7 @@ export default {
       unlimited: 'Unlimited',
       resetNow: 'Resetting soon',
       windowNotActive: 'Window not active',
+      firstUseStartsTimer: 'Timer starts after first use',
       resetInMinutes: 'Resets in {minutes}m',
       resetInHoursMinutes: 'Resets in {hours}h {minutes}m',
       resetInDaysHours: 'Resets in {days}d {hours}h',
@@ -6972,6 +6973,7 @@ export default {
     resetIn: 'Resets in {time}',
     quotaEndsIn: 'Quota ends in {time}',
     windowNotActive: 'Awaiting first use',
+    firstUseStartsTimer: 'Timer starts after first use',
     usageOf: '{used} of {limit}'
   },
 

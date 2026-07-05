@@ -3081,6 +3081,7 @@ export default {
       unlimited: '无限制',
       resetNow: '即将重置',
       windowNotActive: '窗口未激活',
+      firstUseStartsTimer: '首次使用后开始计时',
       resetInMinutes: '{minutes} 分钟后重置',
       resetInHoursMinutes: '{hours} 小时 {minutes} 分钟后重置',
       resetInDaysHours: '{days} 天 {hours} 小时后重置',
@@ -7125,6 +7126,7 @@ export default {
     resetIn: '{time} 后重置',
     quotaEndsIn: '额度将在 {time} 后结束',
     windowNotActive: '等待首次使用',
+    firstUseStartsTimer: '首次使用后开始计时',
     usageOf: '已用 {used} / {limit}'
   },
 
