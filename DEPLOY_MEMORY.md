@@ -47,16 +47,15 @@ Keep `main` clean and synchronized with upstream. Deploy custom changes from `de
 
 ```bash
 git checkout main
-git pull origin main
-git fetch upstream
-git merge upstream/main
-git push origin main
+git fetch origin
+git merge origin/main
 
 git checkout dev
 git merge main
 ```
 
-Resolve any merge conflicts and run the relevant local checks before syncing code to the server.
+If local `main` has accidental local commits, create a backup branch first, then align `main` to `origin/main` before merging into `dev`.
+Resolve any merge conflicts on `dev` and run the relevant local checks before syncing code to the server.
 
 ## Sync Code
 
