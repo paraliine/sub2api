@@ -33,9 +33,8 @@ type officialQuotaWindowUsage struct {
 }
 
 type officialQuotaWindowReset struct {
-	FiveHour bool
-	Daily    bool
-	Weekly   bool
+	Daily  bool
+	Weekly bool
 }
 
 // OfficialQuotaSyncService periodically polls official OpenAI quota usage for
@@ -181,7 +180,7 @@ func (s *OfficialQuotaSyncService) groupDue(group Group, now time.Time) bool {
 	if group.Platform != PlatformOpenAI || group.QuotaSourceAccountID == nil || *group.QuotaSourceAccountID <= 0 {
 		return false
 	}
-	if !group.QuotaFollowOfficialReset || !group.hasOfficialQuotaLimit() {
+	if !group.QuotaFollowOfficialReset || !group.hasOfficialQuotaResetLimit() {
 		return false
 	}
 
@@ -237,7 +236,6 @@ func (s *OfficialQuotaSyncService) checkGroup(ctx context.Context, group Group, 
 			"account_id", accountID,
 			"window_start", previousCheck,
 			"window_end", now,
-			"five_hour", reset.FiveHour,
 			"daily", reset.Daily,
 			"weekly", reset.Weekly,
 			"lag_reconcile", group.QuotaLagReconcileEnabled,
@@ -291,12 +289,10 @@ lag_usage AS (
 updated AS (
 	UPDATE user_subscriptions us
 	SET
-		five_hour_usage_usd = CASE WHEN $5 THEN CASE WHEN $8 THEN COALESCE(lu.used, 0) ELSE 0 END ELSE five_hour_usage_usd END,
-		five_hour_window_start = CASE WHEN $5 THEN $3 ELSE five_hour_window_start END,
-		daily_usage_usd = CASE WHEN $6 THEN CASE WHEN $8 THEN COALESCE(lu.used, 0) ELSE 0 END ELSE daily_usage_usd END,
-		daily_window_start = CASE WHEN $6 THEN $3 ELSE daily_window_start END,
-		weekly_usage_usd = CASE WHEN $7 THEN CASE WHEN $8 THEN COALESCE(lu.used, 0) ELSE 0 END ELSE weekly_usage_usd END,
-		weekly_window_start = CASE WHEN $7 THEN $3 ELSE weekly_window_start END,
+		daily_usage_usd = CASE WHEN $5 THEN CASE WHEN $7 THEN COALESCE(lu.used, 0) ELSE 0 END ELSE daily_usage_usd END,
+		daily_window_start = CASE WHEN $5 THEN $3 ELSE daily_window_start END,
+		weekly_usage_usd = CASE WHEN $6 THEN CASE WHEN $7 THEN COALESCE(lu.used, 0) ELSE 0 END ELSE weekly_usage_usd END,
+		weekly_window_start = CASE WHEN $6 THEN $3 ELSE weekly_window_start END,
 		updated_at = NOW()
 	FROM active_subscriptions active
 	LEFT JOIN lag_usage lu ON lu.subscription_id = active.id
@@ -304,7 +300,7 @@ updated AS (
 	RETURNING us.user_id, us.group_id
 )
 SELECT user_id, group_id FROM updated
-`, group.ID, SubscriptionStatusActive, windowStart, windowEnd, reset.FiveHour, reset.Daily, reset.Weekly, lagEnabled)
+`, group.ID, SubscriptionStatusActive, windowStart, windowEnd, reset.Daily, reset.Weekly, lagEnabled)
 	if err != nil {
 		return err
 	}
@@ -447,9 +443,6 @@ func detectOfficialQuotaReset(extra map[string]any, windows map[officialQuotaWin
 	if len(extra) == 0 || len(windows) == 0 {
 		return reset
 	}
-	if group.OfficialQuotaFiveHourLimitUSD != nil && *group.OfficialQuotaFiveHourLimitUSD > 0 {
-		reset.FiveHour = windowUsageDropped(extra, "codex_5h_used_percent", "official_quota_5h_used_percent", windows[officialQuotaWindowFiveHour])
-	}
 	if group.OfficialQuotaDailyLimitUSD != nil && *group.OfficialQuotaDailyLimitUSD > 0 {
 		reset.Daily = windowUsageDropped(extra, "official_quota_day_used_percent", "", windows[officialQuotaWindowDaily])
 	}
@@ -503,7 +496,7 @@ type jsonNumber interface {
 }
 
 func (r officialQuotaWindowReset) any() bool {
-	return r.FiveHour || r.Daily || r.Weekly
+	return r.Daily || r.Weekly
 }
 
 func (g Group) normalizedQuotaCheckIntervalMinutes() int {
@@ -513,8 +506,7 @@ func (g Group) normalizedQuotaCheckIntervalMinutes() int {
 	return g.QuotaCheckIntervalMinutes
 }
 
-func (g Group) hasOfficialQuotaLimit() bool {
-	return (g.OfficialQuotaFiveHourLimitUSD != nil && *g.OfficialQuotaFiveHourLimitUSD > 0) ||
-		(g.OfficialQuotaDailyLimitUSD != nil && *g.OfficialQuotaDailyLimitUSD > 0) ||
+func (g Group) hasOfficialQuotaResetLimit() bool {
+	return (g.OfficialQuotaDailyLimitUSD != nil && *g.OfficialQuotaDailyLimitUSD > 0) ||
 		(g.OfficialQuotaWeeklyLimitUSD != nil && *g.OfficialQuotaWeeklyLimitUSD > 0)
 }
