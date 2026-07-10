@@ -116,6 +116,14 @@ func (s *RateLimitService) SetAccountRuntimeBlocker(blocker AccountRuntimeBlocke
 	s.runtimeBlocker = blocker
 }
 
+func (s *RateLimitService) IsOpenAIAdvancedSchedulerStickyWeightedEnabled(ctx context.Context) bool {
+	if s == nil || s.settingService == nil {
+		return false
+	}
+	gateway := &OpenAIGatewayService{rateLimitService: s}
+	return gateway.isOpenAIAdvancedSchedulerStickyWeightedEnabled(ctx)
+}
+
 func (s *RateLimitService) notifyAccountSchedulingBlocked(account *Account, until time.Time, reason string) {
 	if s == nil || s.runtimeBlocker == nil || account == nil {
 		return
@@ -291,6 +299,20 @@ func (s *RateLimitService) HandleUpstreamError(ctx context.Context, account *Acc
 			msg := "Authentication failed (401): invalid or expired credentials"
 			if upstreamMsg != "" {
 				msg = "OAuth 401: " + upstreamMsg
+			}
+			if authAccount.Platform == PlatformAntigravity {
+				extraUpdates := antigravityForceTokenRefreshExtra("401_invalid")
+				if err := s.accountRepo.UpdateExtra(ctx, authAccount.ID, extraUpdates); err != nil {
+					slog.Warn("antigravity_401_force_refresh_mark_failed", "account_id", authAccount.ID, "error", err)
+				} else {
+					if authAccount.Extra == nil {
+						authAccount.Extra = make(map[string]any, len(extraUpdates))
+					}
+					for k, v := range extraUpdates {
+						authAccount.Extra[k] = v
+					}
+					slog.Info("antigravity_401_force_refresh_marked", "account_id", authAccount.ID)
+				}
 			}
 			cooldownMinutes := s.cfg.RateLimit.OAuth401CooldownMinutes
 			if cooldownMinutes <= 0 {
@@ -977,12 +999,15 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 		}
 
 		// Anthropic 平台：没有限流重置时间的 429 可能是非真实限流（如 Extra usage required），
-		// 不标记账号限流状态，直接透传错误给客户端
+		// 不适合按 5h/7d 窗口长时间封禁；但完全不标记会导致账号永不冷却，
+		// 调度器让每个请求反复撞同一批持续 429 的账号（failover 预算被白白烧掉，
+		// 客户端稳定收到 429）。因此同样走可配置的秒级兜底回避，管理端可调大或关闭。
 		if account.Platform == PlatformAnthropic {
-			slog.Warn("rate_limit_429_no_reset_time_skipped",
+			slog.Warn("rate_limit_429_no_reset_time",
 				"account_id", account.ID,
 				"platform", account.Platform,
 				"reason", "no rate limit reset time in headers, likely not a real rate limit")
+			s.apply429FallbackRateLimit(ctx, account, "anthropic_no_reset_time")
 			return
 		}
 
