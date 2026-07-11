@@ -753,6 +753,120 @@ func TestStreamingReadToolDropsEmptyPages(t *testing.T) {
 	assert.Equal(t, "content_block_stop", events[1].Type)
 }
 
+func TestStreamingParallelToolCallsKeepAnthropicBlocksSequential(t *testing.T) {
+	state := NewResponsesEventToAnthropicState()
+	ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:     "response.created",
+		Response: &ResponsesResponse{ID: "resp_parallel_tools", Model: "grok-4.5"},
+	}, state)
+
+	var emitted []AnthropicStreamEvent
+	emitted = append(emitted, ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 0,
+		Item:        &ResponsesOutput{Type: "function_call", CallID: "call_read", Name: "Read"},
+	}, state)...)
+
+	// Grok may announce the next parallel tool before the first tool's argument
+	// stream has completed. The second block must remain pending.
+	events := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 1,
+		Item:        &ResponsesOutput{Type: "function_call", CallID: "call_glob", Name: "Glob"},
+	}, state)
+	assert.Empty(t, events)
+
+	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.function_call_arguments.delta",
+		OutputIndex: 1,
+		Delta:       `{"pattern":"**/*.md"}`,
+	}, state)
+	assert.Empty(t, events)
+	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.function_call_arguments.delta",
+		OutputIndex: 0,
+		Delta:       `{"file_path":"/tmp/guide.md","pages":""}`,
+	}, state)
+	assert.Empty(t, events)
+	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.function_call_arguments.done",
+		OutputIndex: 0,
+		Arguments:   `{"file_path":"/tmp/guide.md","pages":""}`,
+	}, state)
+	emitted = append(emitted, events...)
+
+	// A's output_item.done may arrive after B has become the active block. It
+	// must finalize A only, rather than closing B by global current-block state.
+	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.output_item.done",
+		OutputIndex: 0,
+		Item:        &ResponsesOutput{Type: "function_call", CallID: "call_read", Name: "Read"},
+	}, state)
+	assert.Empty(t, events)
+
+	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.function_call_arguments.done",
+		OutputIndex: 1,
+		Arguments:   `{"pattern":"**/*.md"}`,
+	}, state)
+	emitted = append(emitted, events...)
+
+	require.Len(t, emitted, 6)
+	assert.Equal(t, "content_block_start", emitted[0].Type)
+	assert.Equal(t, "Read", emitted[0].ContentBlock.Name)
+	assert.Equal(t, "content_block_delta", emitted[1].Type)
+	assert.JSONEq(t, `{"file_path":"/tmp/guide.md"}`, emitted[1].Delta.PartialJSON)
+	assert.Equal(t, "content_block_stop", emitted[2].Type)
+	assert.Equal(t, "content_block_start", emitted[3].Type)
+	assert.Equal(t, "Glob", emitted[3].ContentBlock.Name)
+	assert.Equal(t, "content_block_delta", emitted[4].Type)
+	assert.JSONEq(t, `{"pattern":"**/*.md"}`, emitted[4].Delta.PartialJSON)
+	assert.Equal(t, "content_block_stop", emitted[5].Type)
+
+	open := make(map[int]bool)
+	for _, event := range emitted {
+		require.NotNil(t, event.Index)
+		idx := *event.Index
+		switch event.Type {
+		case "content_block_start":
+			require.False(t, open[idx], "block %d started twice", idx)
+			open[idx] = true
+		case "content_block_delta":
+			require.True(t, open[idx], "delta referenced unopened or stopped block %d", idx)
+		case "content_block_stop":
+			require.True(t, open[idx], "stop referenced unopened or stopped block %d", idx)
+			delete(open, idx)
+		}
+	}
+	assert.Empty(t, open)
+}
+
+func TestStreamingCustomToolDoneClosesBlock(t *testing.T) {
+	state := NewResponsesEventToAnthropicState()
+	ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:     "response.created",
+		Response: &ResponsesResponse{ID: "resp_custom_tool", Model: "grok-4.5"},
+	}, state)
+
+	events := ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.output_item.added",
+		OutputIndex: 0,
+		Item:        &ResponsesOutput{Type: "custom_tool_call", CallID: "call_patch", Name: "apply_patch"},
+	}, state)
+	require.Len(t, events, 1)
+	assert.Equal(t, "content_block_start", events[0].Type)
+
+	events = ResponsesEventToAnthropicEvents(&ResponsesStreamEvent{
+		Type:        "response.custom_tool_call_input.done",
+		OutputIndex: 0,
+		Input:       `{"patch":"update"}`,
+	}, state)
+	require.Len(t, events, 2)
+	assert.Equal(t, "content_block_delta", events[0].Type)
+	assert.Equal(t, `{"patch":"update"}`, events[0].Delta.PartialJSON)
+	assert.Equal(t, "content_block_stop", events[1].Type)
+}
+
 func TestStreamingReasoning(t *testing.T) {
 	state := NewResponsesEventToAnthropicState()
 
