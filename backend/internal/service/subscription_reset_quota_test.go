@@ -171,6 +171,29 @@ func TestAdminResetQuota_ResetFiveHourClearsWindow(t *testing.T) {
 	require.False(t, stub.resetMonthlyCalled)
 }
 
+func TestEnsureWindowMaintenance_ActivatesFiveHourWhenWeeklyAlreadyActive(t *testing.T) {
+	weeklyStart := time.Now().Add(-24 * time.Hour)
+	stub := &resetQuotaUserSubRepoStub{
+		sub: &UserSubscription{
+			ID:                  11,
+			UserID:              10,
+			GroupID:             20,
+			WeeklyWindowStart:   &weeklyStart,
+			FiveHourUsageUSD:    9.5,
+			FiveHourWindowStart: nil,
+		},
+	}
+	svc := newResetQuotaSvc(stub)
+
+	result, err := svc.EnsureWindowMaintenance(context.Background(), stub.sub)
+
+	require.NoError(t, err)
+	require.True(t, stub.resetFiveHourCalled, "周窗口已激活时仍应初始化五小时窗口")
+	require.NotNil(t, stub.resetFiveHourStart)
+	require.NotNil(t, result.FiveHourWindowStart)
+	require.Zero(t, result.FiveHourUsageUSD)
+}
+
 func TestAdminResetQuota_BothFalseReturnsError(t *testing.T) {
 	stub := &resetQuotaUserSubRepoStub{
 		sub: &UserSubscription{ID: 7, UserID: 10, GroupID: 20},

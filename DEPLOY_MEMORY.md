@@ -41,20 +41,28 @@ services:
     image: sub2api:pxx-latest
 ```
 
-## Sync Upstream Before Deploy
+## Sync Upstream Release Before Deploy
 
-Keep `main` clean and synchronized with upstream. Deploy custom changes from `dev`.
+Keep `main` clean and synchronized with the latest published upstream release tag. Deploy custom changes from `dev`.
+
+Always merge the latest upstream version tag, not `origin/main` or another moving upstream branch. This prevents unreleased upstream commits from entering a deployment. Determine the tag from the official `origin` remote and review it before merging:
 
 ```bash
-git checkout main
-git fetch origin
-git merge origin/main
+git fetch origin --tags --prune
+LATEST_TAG="$(git ls-remote --tags --refs --sort=-version:refname origin 'v*' | sed -n '1s#.*refs/tags/##p')"
+test -n "$LATEST_TAG"
+git fetch origin "refs/tags/$LATEST_TAG:refs/tags/$LATEST_TAG"
+git show --no-patch --decorate "$LATEST_TAG"
 
+git checkout main
+git merge --ff-only "$LATEST_TAG"
 git checkout dev
 git merge main
 ```
 
-If local `main` has accidental local commits, create a backup branch first, then align `main` to `origin/main` before merging into `dev`.
+Do not substitute `origin/main` for `$LATEST_TAG`, even when `origin/main` is ahead. Record the selected tag in the deployment notes so the deployed upstream version is auditable.
+
+If local `main` has accidental local commits, create a backup branch first, then align `main` to the selected tag before merging into `dev`.
 Resolve any merge conflicts on `dev` and run the relevant local checks before syncing code to the server.
 
 ## Sync Code
@@ -87,6 +95,22 @@ On remote:
 cd ~/pxx/sub2api
 docker build -t sub2api:pxx-latest .
 ```
+
+## Mandatory Availability Rule
+
+This server carries the control channel used for deployment. Never explicitly stop the running app container during an interactive operation. In particular, do not run any of the following commands for `sub2api` or `xx-sub2api`:
+
+```text
+docker stop
+docker kill
+docker compose stop
+docker compose down
+docker compose restart
+```
+
+Do not leave the app stopped between commands, tool calls, or conversation turns. Perform database corrections and verification while the current container remains online. Build the new image and complete every prerequisite first, then replace the app in one command with `docker compose up -d --force-recreate --no-deps sub2api`.
+
+If an operation genuinely requires downtime, first establish and verify an independent recovery/control path, then obtain explicit user approval. Without both conditions, do not perform the operation.
 
 ## Restart App
 

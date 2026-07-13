@@ -942,7 +942,7 @@ func (s *SubscriptionService) EnsureWindowMaintenance(ctx context.Context, sub *
 	if sub == nil {
 		return nil, ErrSubscriptionNilInput
 	}
-	if !sub.IsWindowActivated() {
+	if !sub.IsWindowActivated() || sub.FiveHourWindowStart == nil {
 		if err := s.CheckAndActivateWindow(ctx, sub); err != nil {
 			return nil, err
 		}

@@ -16,6 +16,7 @@ const (
 	officialQuotaCheckTimeout     = 45 * time.Second
 	officialQuotaResetDropPercent = 0.5
 	officialQuotaInitialDelay     = 5 * time.Second
+	officialQuotaResetAdvance     = time.Minute
 )
 
 type officialQuotaWindow string
@@ -33,8 +34,22 @@ type officialQuotaWindowUsage struct {
 }
 
 type officialQuotaWindowReset struct {
-	Daily  bool
-	Weekly bool
+	Daily                          bool
+	DailyWindowStart               time.Time
+	DailyPreviousWindowStart       time.Time
+	DailyReason                    string
+	DailySignalMismatch            bool
+	DailyCurrentUsedPercent        float64
+	DailyPreviousUsedPercent       float64
+	DailyPreviousUsedPercentKnown  bool
+	Weekly                         bool
+	WeeklyWindowStart              time.Time
+	WeeklyPreviousWindowStart      time.Time
+	WeeklyReason                   string
+	WeeklySignalMismatch           bool
+	WeeklyCurrentUsedPercent       float64
+	WeeklyPreviousUsedPercent      float64
+	WeeklyPreviousUsedPercentKnown bool
 }
 
 // OfficialQuotaSyncService periodically polls official OpenAI quota usage for
@@ -226,15 +241,39 @@ func (s *OfficialQuotaSyncService) checkGroup(ctx context.Context, group Group, 
 	updates["official_quota_last_checked_at"] = now.Format(time.RFC3339)
 	updates["official_quota_source_group_id"] = group.ID
 
-	reset := detectOfficialQuotaReset(account.Extra, windows, group)
+	reset := detectOfficialQuotaReset(account.Extra, windows, group, now)
 	if reset.any() && !previousCheck.IsZero() {
-		if err := s.reconcileGroupReset(ctx, group, previousCheck, now, reset); err != nil {
+		if reset.signalMismatch() {
+			slog.Warn("official_quota_reset_signal_mismatch",
+				"group_id", group.ID,
+				"account_id", accountID,
+				"daily", reset.DailySignalMismatch,
+				"daily_previous_window_start", reset.DailyPreviousWindowStart,
+				"daily_window_start", reset.DailyWindowStart,
+				"daily_previous_used_percent", reset.DailyPreviousUsedPercent,
+				"daily_current_used_percent", reset.DailyCurrentUsedPercent,
+				"daily_previous_used_percent_known", reset.DailyPreviousUsedPercentKnown,
+				"weekly", reset.WeeklySignalMismatch,
+				"weekly_previous_window_start", reset.WeeklyPreviousWindowStart,
+				"weekly_window_start", reset.WeeklyWindowStart,
+				"weekly_previous_used_percent", reset.WeeklyPreviousUsedPercent,
+				"weekly_current_used_percent", reset.WeeklyCurrentUsedPercent,
+				"weekly_previous_used_percent_known", reset.WeeklyPreviousUsedPercentKnown,
+			)
+		}
+		if err := s.reconcileGroupReset(ctx, group, now, reset); err != nil {
 			return err
 		}
 		slog.Info("official_quota_reset_reconciled",
 			"group_id", group.ID,
 			"account_id", accountID,
-			"window_start", previousCheck,
+			"detected_since", previousCheck,
+			"daily_reason", reset.DailyReason,
+			"daily_previous_window_start", reset.DailyPreviousWindowStart,
+			"daily_window_start", reset.DailyWindowStart,
+			"weekly_reason", reset.WeeklyReason,
+			"weekly_previous_window_start", reset.WeeklyPreviousWindowStart,
+			"weekly_window_start", reset.WeeklyWindowStart,
 			"window_end", now,
 			"daily", reset.Daily,
 			"weekly", reset.Weekly,
@@ -262,8 +301,9 @@ func (s *OfficialQuotaSyncService) markChecked(groupID int64, at time.Time) {
 	s.mu.Unlock()
 }
 
-func (s *OfficialQuotaSyncService) reconcileGroupReset(ctx context.Context, group Group, windowStart, windowEnd time.Time, reset officialQuotaWindowReset) error {
-	if windowStart.IsZero() || !windowEnd.After(windowStart) {
+func (s *OfficialQuotaSyncService) reconcileGroupReset(ctx context.Context, group Group, windowEnd time.Time, reset officialQuotaWindowReset) error {
+	dailyReset, weeklyReset := reset.validWindows(windowEnd)
+	if windowEnd.IsZero() || (!dailyReset && !weeklyReset) {
 		return nil
 	}
 
@@ -277,30 +317,67 @@ WITH active_subscriptions AS (
 	  AND deleted_at IS NULL
 	  AND expires_at > NOW()
 ),
-lag_usage AS (
+daily_lag_usage AS (
 	SELECT subscription_id, COALESCE(SUM(total_cost), 0)::float8 AS used
 	FROM usage_logs
 	WHERE group_id = $1
 	  AND subscription_id IS NOT NULL
+	  AND $5
 	  AND created_at >= $3
 	  AND created_at < $4
 	GROUP BY subscription_id
 ),
+weekly_lag_usage AS (
+	SELECT subscription_id, COALESCE(SUM(total_cost), 0)::float8 AS used
+	FROM usage_logs
+	WHERE group_id = $1
+	  AND subscription_id IS NOT NULL
+	  AND $6
+	  AND created_at >= $8
+	  AND created_at < $4
+	GROUP BY subscription_id
+),
+weekly_first_usage AS (
+	SELECT subscription_id, MIN(created_at) AS first_used_at
+	FROM usage_logs
+	WHERE group_id = $1
+	  AND subscription_id IS NOT NULL
+	  AND $6
+	  AND $7
+	  AND created_at >= $8
+	  AND created_at < $4
+	GROUP BY subscription_id
+),
+five_hour_lag_usage AS (
+	SELECT ul.subscription_id, COALESCE(SUM(ul.total_cost), 0)::float8 AS used
+	FROM usage_logs ul
+	JOIN weekly_first_usage wfu ON wfu.subscription_id = ul.subscription_id
+	WHERE ul.group_id = $1
+	  AND ul.subscription_id IS NOT NULL
+	  AND ul.created_at >= wfu.first_used_at
+	  AND ul.created_at < $4
+	GROUP BY ul.subscription_id
+),
 updated AS (
 	UPDATE user_subscriptions us
 	SET
-		daily_usage_usd = CASE WHEN $5 THEN CASE WHEN $7 THEN COALESCE(lu.used, 0) ELSE 0 END ELSE daily_usage_usd END,
+		five_hour_usage_usd = CASE WHEN $6 THEN CASE WHEN $7 THEN COALESCE(fhlu.used, 0) ELSE 0 END ELSE five_hour_usage_usd END,
+		five_hour_window_start = CASE WHEN $6 THEN wfu.first_used_at ELSE five_hour_window_start END,
+		daily_usage_usd = CASE WHEN $5 THEN CASE WHEN $7 THEN COALESCE(dlu.used, 0) ELSE 0 END ELSE daily_usage_usd END,
 		daily_window_start = CASE WHEN $5 THEN $3 ELSE daily_window_start END,
-		weekly_usage_usd = CASE WHEN $6 THEN CASE WHEN $7 THEN COALESCE(lu.used, 0) ELSE 0 END ELSE weekly_usage_usd END,
-		weekly_window_start = CASE WHEN $6 THEN $3 ELSE weekly_window_start END,
+		weekly_usage_usd = CASE WHEN $6 THEN CASE WHEN $7 THEN COALESCE(wlu.used, 0) ELSE 0 END ELSE weekly_usage_usd END,
+		weekly_window_start = CASE WHEN $6 THEN $8 ELSE weekly_window_start END,
 		updated_at = NOW()
 	FROM active_subscriptions active
-	LEFT JOIN lag_usage lu ON lu.subscription_id = active.id
+	LEFT JOIN daily_lag_usage dlu ON dlu.subscription_id = active.id
+	LEFT JOIN weekly_lag_usage wlu ON wlu.subscription_id = active.id
+	LEFT JOIN weekly_first_usage wfu ON wfu.subscription_id = active.id
+	LEFT JOIN five_hour_lag_usage fhlu ON fhlu.subscription_id = active.id
 	WHERE us.id = active.id
 	RETURNING us.user_id, us.group_id
 )
 SELECT user_id, group_id FROM updated
-`, group.ID, SubscriptionStatusActive, windowStart, windowEnd, reset.Daily, reset.Weekly, lagEnabled)
+		`, group.ID, SubscriptionStatusActive, nullableResetWindowStart(dailyReset, reset.DailyWindowStart), windowEnd, dailyReset, weeklyReset, lagEnabled, nullableResetWindowStart(weeklyReset, reset.WeeklyWindowStart))
 	if err != nil {
 		return err
 	}
@@ -430,6 +507,9 @@ func addOfficialQuotaWindowUpdates(updates map[string]any, windows map[officialQ
 		updates[prefix+"_used_percent"] = usage.UsedPercent
 		updates[prefix+"_reset_after_seconds"] = usage.ResetAfterSeconds
 		updates[prefix+"_window_minutes"] = usage.WindowMinutes
+		if windowStart := officialQuotaWindowStart(usage, base); !windowStart.IsZero() {
+			updates[prefix+"_window_start"] = windowStart.Format(time.RFC3339)
+		}
 		resetAfter := usage.ResetAfterSeconds
 		if resetAfter < 0 {
 			resetAfter = 0
@@ -438,32 +518,117 @@ func addOfficialQuotaWindowUpdates(updates map[string]any, windows map[officialQ
 	}
 }
 
-func detectOfficialQuotaReset(extra map[string]any, windows map[officialQuotaWindow]officialQuotaWindowUsage, group Group) officialQuotaWindowReset {
+func detectOfficialQuotaReset(extra map[string]any, windows map[officialQuotaWindow]officialQuotaWindowUsage, group Group, base time.Time) officialQuotaWindowReset {
 	var reset officialQuotaWindowReset
 	if len(extra) == 0 || len(windows) == 0 {
 		return reset
 	}
 	if group.OfficialQuotaDailyLimitUSD != nil && *group.OfficialQuotaDailyLimitUSD > 0 {
-		reset.Daily = windowUsageDropped(extra, "official_quota_day_used_percent", "", windows[officialQuotaWindowDaily])
+		window := windows[officialQuotaWindowDaily]
+		windowStart := officialQuotaWindowStart(window, base)
+		percentDropped, prevUsedPercent, prevUsedPercentKnown := windowUsageDropDetails(extra, "official_quota_day_used_percent", "", window)
+		if advanced, prevStart, known := officialQuotaWindowAdvanced(extra, "official_quota_day", windowStart); known {
+			reset.Daily = advanced
+			reset.DailyPreviousWindowStart = prevStart
+			reset.DailySignalMismatch = advanced && !percentDropped
+			if advanced {
+				reset.DailyReason = "window_start_advanced"
+			}
+		} else {
+			reset.Daily = percentDropped
+			if reset.Daily {
+				reset.DailyReason = "usage_percent_dropped"
+			}
+		}
+		reset.DailyCurrentUsedPercent = window.UsedPercent
+		reset.DailyPreviousUsedPercent = prevUsedPercent
+		reset.DailyPreviousUsedPercentKnown = prevUsedPercentKnown
+		if reset.Daily {
+			reset.DailyWindowStart = windowStart
+		}
 	}
 	if group.OfficialQuotaWeeklyLimitUSD != nil && *group.OfficialQuotaWeeklyLimitUSD > 0 {
-		reset.Weekly = windowUsageDropped(extra, "codex_7d_used_percent", "official_quota_7d_used_percent", windows[officialQuotaWindowWeekly])
+		window := windows[officialQuotaWindowWeekly]
+		windowStart := officialQuotaWindowStart(window, base)
+		percentDropped, prevUsedPercent, prevUsedPercentKnown := windowUsageDropDetails(extra, "official_quota_7d_used_percent", "codex_7d_used_percent", window)
+		if advanced, prevStart, known := officialQuotaWindowAdvanced(extra, "official_quota_7d", windowStart); known {
+			reset.Weekly = advanced
+			reset.WeeklyPreviousWindowStart = prevStart
+			reset.WeeklySignalMismatch = advanced && !percentDropped
+			if advanced {
+				reset.WeeklyReason = "window_start_advanced"
+			}
+		} else {
+			reset.Weekly = percentDropped
+			if reset.Weekly {
+				reset.WeeklyReason = "usage_percent_dropped"
+			}
+		}
+		reset.WeeklyCurrentUsedPercent = window.UsedPercent
+		reset.WeeklyPreviousUsedPercent = prevUsedPercent
+		reset.WeeklyPreviousUsedPercentKnown = prevUsedPercentKnown
+		if reset.Weekly {
+			reset.WeeklyWindowStart = windowStart
+		}
 	}
 	return reset
 }
 
+func officialQuotaWindowStart(current officialQuotaWindowUsage, base time.Time) time.Time {
+	if base.IsZero() || current.WindowMinutes <= 0 {
+		return time.Time{}
+	}
+	resetAfter := current.ResetAfterSeconds
+	if resetAfter < 0 {
+		resetAfter = 0
+	}
+	resetAt := base.Add(time.Duration(resetAfter) * time.Second)
+	return resetAt.Add(-time.Duration(current.WindowMinutes) * time.Minute)
+}
+
+func officialQuotaWindowAdvanced(extra map[string]any, prefix string, currentStart time.Time) (bool, time.Time, bool) {
+	if currentStart.IsZero() {
+		return false, time.Time{}, false
+	}
+	prevStart := previousOfficialQuotaWindowStart(extra, prefix)
+	if prevStart.IsZero() {
+		return false, time.Time{}, false
+	}
+	return currentStart.After(prevStart.Add(officialQuotaResetAdvance)), prevStart, true
+}
+
+func previousOfficialQuotaWindowStart(extra map[string]any, prefix string) time.Time {
+	if extra == nil || prefix == "" {
+		return time.Time{}
+	}
+	if start := parseExtraTime(extra[prefix+"_window_start"]); !start.IsZero() {
+		return start
+	}
+	resetAt := parseExtraTime(extra[prefix+"_reset_at"])
+	windowMinutes := int(parseExtraFloat64(extra[prefix+"_window_minutes"]))
+	if resetAt.IsZero() || windowMinutes <= 0 {
+		return time.Time{}
+	}
+	return resetAt.Add(-time.Duration(windowMinutes) * time.Minute)
+}
+
 func windowUsageDropped(extra map[string]any, primaryKey, fallbackKey string, current officialQuotaWindowUsage) bool {
+	dropped, _, _ := windowUsageDropDetails(extra, primaryKey, fallbackKey, current)
+	return dropped
+}
+
+func windowUsageDropDetails(extra map[string]any, primaryKey, fallbackKey string, current officialQuotaWindowUsage) (bool, float64, bool) {
 	if current.WindowMinutes <= 0 {
-		return false
+		return false, 0, false
 	}
 	prev, ok := extraFloat(extra, primaryKey)
 	if !ok && fallbackKey != "" {
 		prev, ok = extraFloat(extra, fallbackKey)
 	}
 	if !ok || math.IsNaN(prev) || math.IsInf(prev, 0) {
-		return false
+		return false, 0, false
 	}
-	return current.UsedPercent+officialQuotaResetDropPercent < prev
+	return current.UsedPercent+officialQuotaResetDropPercent < prev, prev, true
 }
 
 func extraFloat(extra map[string]any, key string) (float64, bool) {
@@ -497,6 +662,23 @@ type jsonNumber interface {
 
 func (r officialQuotaWindowReset) any() bool {
 	return r.Daily || r.Weekly
+}
+
+func (r officialQuotaWindowReset) signalMismatch() bool {
+	return r.DailySignalMismatch || r.WeeklySignalMismatch
+}
+
+func (r officialQuotaWindowReset) validWindows(windowEnd time.Time) (bool, bool) {
+	dailyValid := r.Daily && !r.DailyWindowStart.IsZero() && windowEnd.After(r.DailyWindowStart)
+	weeklyValid := r.Weekly && !r.WeeklyWindowStart.IsZero() && windowEnd.After(r.WeeklyWindowStart)
+	return dailyValid, weeklyValid
+}
+
+func nullableResetWindowStart(enabled bool, windowStart time.Time) any {
+	if !enabled || windowStart.IsZero() {
+		return nil
+	}
+	return windowStart
 }
 
 func (g Group) normalizedQuotaCheckIntervalMinutes() int {
