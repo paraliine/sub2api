@@ -65,6 +65,16 @@ Do not substitute `origin/main` for `$LATEST_TAG`, even when `origin/main` is ah
 If local `main` has accidental local commits, create a backup branch first, then align `main` to the selected tag before merging into `dev`.
 Resolve any merge conflicts on `dev` and run the relevant local checks before syncing code to the server.
 
+If the merge changes `backend/ent/schema/`, or either side changed Ent schema/generated files, always regenerate Ent after resolving conflicts. Generated files can merge cleanly while retaining invalid field indexes.
+
+```bash
+cd backend
+go generate ./ent
+go test ./ent/...
+cd ..
+git diff --check
+```
+
 ## Sync Code
 
 From local repo root:
@@ -93,8 +103,12 @@ On remote:
 
 ```bash
 cd ~/pxx/sub2api
-docker build -t sub2api:pxx-latest .
+DEPLOY_VERSION=0.1.152 # selected upstream tag without the leading v
+docker build --build-arg VERSION="$DEPLOY_VERSION" -t sub2api:pxx-latest .
+docker run --rm --entrypoint /app/sub2api sub2api:pxx-latest -version
 ```
+
+Update `DEPLOY_VERSION` for every deployment. The one-shot `-version` run is mandatory: it executes package initialization and catches startup panics before the running container is replaced.
 
 ## Mandatory Availability Rule
 
