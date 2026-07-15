@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
-	"github.com/Wei-Shaw/sub2api/internal/pkg/xai"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -22,6 +21,15 @@ const (
 	openAIWSHTTPBridgeThresholdBytesDefault int64 = 15 * 1024 * 1024
 	openAIWSHTTPBridgeErrorBodyLimitBytes         = 64 * 1024
 )
+
+// ResolveOpenAIWSClientFirstMessageTimeout returns the effective client ingress deadline.
+func ResolveOpenAIWSClientFirstMessageTimeout(cfg *config.Config) time.Duration {
+	seconds := config.DefaultOpenAIWSClientFirstMessageTimeoutSeconds
+	if cfg != nil && cfg.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds > 0 {
+		seconds = cfg.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds
+	}
+	return time.Duration(seconds) * time.Second
+}
 
 func ResolveOpenAIWSClientReadLimitBytes(cfg *config.Config) int64 {
 	if cfg == nil || cfg.Gateway.OpenAIWS.ClientReadLimitBytes <= 0 {
@@ -193,13 +201,16 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 			releaseUpstreamCtx()
 			return nil, fmt.Errorf("apply grok prompt cache identity: %w", err)
 		}
-		upstreamReq, err = buildGrokResponsesRequest(upstreamCtx, c, account, body, token, grokCacheIdentity)
+		upstreamReq, err = buildGrokResponsesRequest(upstreamCtx, c, account, body, token, grokCacheIdentity, s.cfg)
 	} else {
 		upstreamReq, err = s.buildUpstreamRequestOpenAIPassthrough(upstreamCtx, c, account, body, token)
 	}
 	releaseUpstreamCtx()
 	if err != nil {
 		return nil, err
+	}
+	if account.Platform != PlatformGrok && isOpenAIResponsesLiteWebSocketPayload(payload) {
+		upstreamReq.Header.Set(responsesLiteHeader, "true")
 	}
 
 	proxyURL := ""
@@ -233,7 +244,7 @@ func (s *OpenAIGatewayService) proxyOpenAIWSHTTPBridgeTurn(
 		return nil, fmt.Errorf("upstream http bridge error: status=%d message=%s", resp.StatusCode, upstreamMsg)
 	}
 	if account.Platform == PlatformGrok {
-		s.updateGrokUsageSnapshot(ctx, account, xai.ParseQuotaHeaders(resp.Header, resp.StatusCode))
+		s.updateGrokUsageFromResponse(ctx, account, resp.Header, resp.StatusCode)
 	}
 
 	responseID := ""
@@ -431,7 +442,7 @@ func resolveGrokWSUpstreamModel(account *Account, body []byte, originalModel str
 		}
 	}
 	if upstreamModel == "" {
-		upstreamModel = "grok-4.3"
+		upstreamModel = grokDefaultResponsesModel
 	}
 	return upstreamModel
 }

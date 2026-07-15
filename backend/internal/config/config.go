@@ -580,6 +580,18 @@ type TokenRefreshConfig struct {
 	MaxRetries int `mapstructure:"max_retries"`
 	// 重试退避基础时间（秒）
 	RetryBackoffSeconds int `mapstructure:"retry_backoff_seconds"`
+	// 每次从数据库读取的候选账号上限
+	CandidatePageSize int `mapstructure:"candidate_page_size"`
+	// 每个平台允许的并发刷新数
+	ProviderConcurrency int `mapstructure:"provider_concurrency"`
+	// 每个平台、每个进程允许的刷新请求速率
+	ProviderQPS int `mapstructure:"provider_qps"`
+	// 一个周期内连续临时失败达到此值后停止该平台
+	ProviderFailureThreshold int `mapstructure:"provider_failure_threshold"`
+	// 单次上游刷新尝试的超时（秒）
+	AttemptTimeoutSeconds int `mapstructure:"attempt_timeout_seconds"`
+	// 单个后台刷新周期的总超时（秒）
+	CycleTimeoutSeconds int `mapstructure:"cycle_timeout_seconds"`
 }
 
 type PricingConfig struct {
@@ -601,6 +613,7 @@ type ServerConfig struct {
 	Host               string    `mapstructure:"host"`
 	Port               int       `mapstructure:"port"`
 	Mode               string    `mapstructure:"mode"`                  // debug/release
+	EnableServerTiming bool      `mapstructure:"enable_server_timing"`  // Admin UI Server-Timing response header
 	FrontendURL        string    `mapstructure:"frontend_url"`          // 前端基础 URL，用于生成邮件中的外部链接
 	ReadHeaderTimeout  int       `mapstructure:"read_header_timeout"`   // 读取请求头超时（秒）
 	IdleTimeout        int       `mapstructure:"idle_timeout"`          // 空闲连接超时（秒）
@@ -747,6 +760,11 @@ type GatewayConfig struct {
 	// OpenAIResponseHeaderTimeout: OpenAI/Codex 上游等待响应头的超时时间（秒），0表示无超时
 	// OpenAI/Codex 请求可能在上游排队较久；默认不使用通用响应头超时截断。
 	OpenAIResponseHeaderTimeout int `mapstructure:"openai_response_header_timeout"`
+	// OpenAIFirstOutputTimeoutSeconds: native HTTP Responses 首个语义输出超时（秒），0表示禁用。
+	OpenAIFirstOutputTimeoutSeconds int `mapstructure:"openai_first_output_timeout_seconds"`
+	// OpenAIHighEffortFirstOutputTimeoutSeconds: high/xhigh/max 推理的首个语义输出超时（秒）。
+	// 0 表示回退到 OpenAIFirstOutputTimeoutSeconds。
+	OpenAIHighEffortFirstOutputTimeoutSeconds int `mapstructure:"openai_high_effort_first_output_timeout_seconds"`
 	// 请求体最大字节数，用于网关请求体大小限制
 	MaxBodySize int64 `mapstructure:"max_body_size"`
 	// 非流式上游响应体读取上限（字节），用于防止无界读取导致内存放大
@@ -818,6 +836,8 @@ type GatewayConfig struct {
 	ImageStreamDataIntervalTimeout int `mapstructure:"image_stream_data_interval_timeout"`
 	// ImageStreamKeepaliveInterval: 图片流式 keepalive 间隔（秒），0表示禁用
 	ImageStreamKeepaliveInterval int `mapstructure:"image_stream_keepalive_interval"`
+	// ImageNonstreamKeepaliveInterval: 图片非流式 JSON keepalive 间隔（秒），0表示禁用
+	ImageNonstreamKeepaliveInterval int `mapstructure:"image_nonstream_keepalive_interval"`
 	// MaxLineSize: 上游 SSE 单行最大字节数（0使用默认值）
 	MaxLineSize int `mapstructure:"max_line_size"`
 
@@ -916,6 +936,9 @@ func (c *UserMessageQueueConfig) GetEffectiveMode() string {
 	return ""
 }
 
+// DefaultOpenAIWSClientFirstMessageTimeoutSeconds preserves the legacy ingress deadline.
+const DefaultOpenAIWSClientFirstMessageTimeoutSeconds = 30
+
 // GatewayOpenAIWSConfig OpenAI Responses WebSocket 配置。
 // 注意：默认全局开启；如需回滚可使用 force_http 或关闭 enabled。
 type GatewayOpenAIWSConfig struct {
@@ -923,6 +946,15 @@ type GatewayOpenAIWSConfig struct {
 	ModeRouterV2Enabled bool `mapstructure:"mode_router_v2_enabled"`
 	// IngressModeDefault: ingress 默认模式（off/ctx_pool/passthrough/http_bridge）
 	IngressModeDefault string `mapstructure:"ingress_mode_default"`
+	// ClientFirstMessageTimeoutSeconds bounds the total time to read and decompress
+	// the first client response.create message after the WebSocket upgrade.
+	ClientFirstMessageTimeoutSeconds int `mapstructure:"client_first_message_timeout_seconds"`
+	// IngressInterTurnIdleTimeoutSeconds bounds the time a client may remain idle
+	// between completed ingress turns. Zero disables this protection.
+	IngressInterTurnIdleTimeoutSeconds int `mapstructure:"ingress_inter_turn_idle_timeout_seconds"`
+	// MaxIngressConnectionsPerAPIKey bounds live client WebSocket ingress sessions
+	// per API key across all instances. Zero disables this protection.
+	MaxIngressConnectionsPerAPIKey int `mapstructure:"max_ingress_connections_per_api_key"`
 	// Enabled: 全局总开关（默认 true）
 	Enabled bool `mapstructure:"enabled"`
 	// OAuthEnabled: 是否允许 OpenAI OAuth 账号使用 WS
@@ -1453,6 +1485,9 @@ func load(allowMissingJWTSecret bool) (*Config, error) {
 	// 环境变量支持
 	viper.AutomaticEnv()
 	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	if err := viper.BindEnv("server.enable_server_timing", "ENABLE_SERVER_TIMING"); err != nil {
+		return nil, fmt.Errorf("bind ENABLE_SERVER_TIMING: %w", err)
+	}
 
 	// 默认值
 	setDefaults()
@@ -1608,6 +1643,7 @@ func setDefaults() {
 	viper.SetDefault("server.host", "0.0.0.0")
 	viper.SetDefault("server.port", 8080)
 	viper.SetDefault("server.mode", "release")
+	viper.SetDefault("server.enable_server_timing", false)
 	viper.SetDefault("server.frontend_url", "")
 	viper.SetDefault("server.read_header_timeout", 30) // 30秒读取请求头
 	viper.SetDefault("server.idle_timeout", 120)       // 120秒空闲超时
@@ -1931,6 +1967,8 @@ func setDefaults() {
 	// Gateway
 	viper.SetDefault("gateway.response_header_timeout", 600) // 600秒(10分钟)等待上游响应头，LLM高负载时可能排队较久
 	viper.SetDefault("gateway.openai_response_header_timeout", 0)
+	viper.SetDefault("gateway.openai_first_output_timeout_seconds", 0)
+	viper.SetDefault("gateway.openai_high_effort_first_output_timeout_seconds", 0)
 	viper.SetDefault("gateway.log_upstream_error_body", true)
 	viper.SetDefault("gateway.log_upstream_error_body_max_bytes", 2048)
 	viper.SetDefault("gateway.inject_beta_for_apikey", false)
@@ -1945,6 +1983,9 @@ func setDefaults() {
 	viper.SetDefault("gateway.openai_ws.enabled", true)
 	viper.SetDefault("gateway.openai_ws.mode_router_v2_enabled", false)
 	viper.SetDefault("gateway.openai_ws.ingress_mode_default", "ctx_pool")
+	viper.SetDefault("gateway.openai_ws.client_first_message_timeout_seconds", DefaultOpenAIWSClientFirstMessageTimeoutSeconds)
+	viper.SetDefault("gateway.openai_ws.ingress_inter_turn_idle_timeout_seconds", 300)
+	viper.SetDefault("gateway.openai_ws.max_ingress_connections_per_api_key", 64)
 	viper.SetDefault("gateway.openai_ws.oauth_enabled", true)
 	viper.SetDefault("gateway.openai_ws.apikey_enabled", true)
 	viper.SetDefault("gateway.openai_ws.force_http", false)
@@ -2024,6 +2065,7 @@ func setDefaults() {
 	viper.SetDefault("gateway.stream_keepalive_interval", 10)
 	viper.SetDefault("gateway.image_stream_data_interval_timeout", 900)
 	viper.SetDefault("gateway.image_stream_keepalive_interval", 10)
+	viper.SetDefault("gateway.image_nonstream_keepalive_interval", 0)
 	viper.SetDefault("gateway.max_line_size", 500*1024*1024)
 	viper.SetDefault("gateway.scheduling.sticky_session_max_waiting", 3)
 	viper.SetDefault("gateway.scheduling.sticky_session_wait_timeout", 120*time.Second)
@@ -2082,6 +2124,12 @@ func setDefaults() {
 	viper.SetDefault("token_refresh.refresh_before_expiry_hours", 0.5) // 提前30分钟刷新（适配Google 1小时token）
 	viper.SetDefault("token_refresh.max_retries", 3)                   // 最多重试3次
 	viper.SetDefault("token_refresh.retry_backoff_seconds", 2)         // 重试退避基础2秒
+	viper.SetDefault("token_refresh.candidate_page_size", 200)
+	viper.SetDefault("token_refresh.provider_concurrency", 4)
+	viper.SetDefault("token_refresh.provider_qps", 2)
+	viper.SetDefault("token_refresh.provider_failure_threshold", 3)
+	viper.SetDefault("token_refresh.attempt_timeout_seconds", 15)
+	viper.SetDefault("token_refresh.cycle_timeout_seconds", 240)
 
 	// Gemini OAuth - configure via environment variables or config file
 	// GEMINI_OAUTH_CLIENT_ID and GEMINI_OAUTH_CLIENT_SECRET
@@ -2635,6 +2683,14 @@ func (c *Config) Validate() error {
 	if c.Gateway.OpenAIResponseHeaderTimeout < 0 {
 		return fmt.Errorf("gateway.openai_response_header_timeout must be non-negative")
 	}
+	if c.Gateway.OpenAIFirstOutputTimeoutSeconds < 0 || c.Gateway.OpenAIFirstOutputTimeoutSeconds > 600 ||
+		(c.Gateway.OpenAIFirstOutputTimeoutSeconds > 0 && c.Gateway.OpenAIFirstOutputTimeoutSeconds < 30) {
+		return fmt.Errorf("gateway.openai_first_output_timeout_seconds must be 0 or between 30-600 seconds")
+	}
+	if c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds < 0 || c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds > 1800 ||
+		(c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds > 0 && c.Gateway.OpenAIHighEffortFirstOutputTimeoutSeconds < 30) {
+		return fmt.Errorf("gateway.openai_high_effort_first_output_timeout_seconds must be 0 or between 30-1800 seconds")
+	}
 	if strings.TrimSpace(c.Gateway.ConnectionPoolIsolation) != "" {
 		switch c.Gateway.ConnectionPoolIsolation {
 		case ConnectionPoolIsolationProxy, ConnectionPoolIsolationAccount, ConnectionPoolIsolationAccountProxy:
@@ -2710,12 +2766,28 @@ func (c *Config) Validate() error {
 		(c.Gateway.ImageStreamKeepaliveInterval < 5 || c.Gateway.ImageStreamKeepaliveInterval > 60) {
 		return fmt.Errorf("gateway.image_stream_keepalive_interval must be 0 or between 5-60 seconds")
 	}
+	if c.Gateway.ImageNonstreamKeepaliveInterval < 0 {
+		return fmt.Errorf("gateway.image_nonstream_keepalive_interval must be non-negative")
+	}
+	if c.Gateway.ImageNonstreamKeepaliveInterval != 0 &&
+		(c.Gateway.ImageNonstreamKeepaliveInterval < 5 || c.Gateway.ImageNonstreamKeepaliveInterval > 60) {
+		return fmt.Errorf("gateway.image_nonstream_keepalive_interval must be 0 or between 5-60 seconds")
+	}
 	// 兼容旧键 sticky_previous_response_ttl_seconds
 	if c.Gateway.OpenAIWS.StickyResponseIDTTLSeconds <= 0 && c.Gateway.OpenAIWS.StickyPreviousResponseTTLSeconds > 0 {
 		c.Gateway.OpenAIWS.StickyResponseIDTTLSeconds = c.Gateway.OpenAIWS.StickyPreviousResponseTTLSeconds
 	}
 	if c.Gateway.OpenAIWS.MaxConnsPerAccount <= 0 {
 		return fmt.Errorf("gateway.openai_ws.max_conns_per_account must be positive")
+	}
+	if c.Gateway.OpenAIWS.ClientFirstMessageTimeoutSeconds <= 0 {
+		return fmt.Errorf("gateway.openai_ws.client_first_message_timeout_seconds must be positive")
+	}
+	if c.Gateway.OpenAIWS.IngressInterTurnIdleTimeoutSeconds < 0 {
+		return fmt.Errorf("gateway.openai_ws.ingress_inter_turn_idle_timeout_seconds must be non-negative")
+	}
+	if c.Gateway.OpenAIWS.MaxIngressConnectionsPerAPIKey < 0 {
+		return fmt.Errorf("gateway.openai_ws.max_ingress_connections_per_api_key must be non-negative")
 	}
 	if c.Gateway.OpenAIWS.MinIdlePerAccount < 0 {
 		return fmt.Errorf("gateway.openai_ws.min_idle_per_account must be non-negative")

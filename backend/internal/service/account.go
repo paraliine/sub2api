@@ -6,7 +6,6 @@ import (
 	"errors"
 	"hash/fnv"
 	"log/slog"
-	"net/url"
 	"reflect"
 	"sort"
 	"strconv"
@@ -82,6 +81,8 @@ type Account struct {
 }
 
 type OpenAIEndpointCapability string
+
+const openAILongContextBillingEnabledKey = "openai_long_context_billing_enabled"
 
 const (
 	OpenAIEndpointCapabilityChatCompletions OpenAIEndpointCapability = "chat_completions"
@@ -1220,6 +1221,14 @@ func (a *Account) IsOpenAI() bool {
 	return a.Platform == PlatformOpenAI
 }
 
+func (a *Account) IsOpenAILongContextBillingEnabled() bool {
+	if a == nil || !a.IsOpenAI() || a.Extra == nil {
+		return false
+	}
+	enabled, ok := a.Extra[openAILongContextBillingEnabledKey].(bool)
+	return ok && enabled
+}
+
 func (a *Account) IsAnthropic() bool {
 	return a.Platform == PlatformAnthropic
 }
@@ -1279,42 +1288,39 @@ func (a *Account) GetOpenAIRefreshToken() string {
 	return a.GetCredential("refresh_token")
 }
 
+// GetGrokBaseURL selects the upstream used by Grok text and Responses traffic.
+// Grok media traffic has a different transport contract and must use
+// GetGrokMediaBaseURL instead.
 func (a *Account) GetGrokBaseURL() string {
 	if !a.IsGrok() {
 		return ""
 	}
-	baseURL := a.GetCredential("base_url")
 	if a.IsGrokOAuth() {
-		if strings.TrimSpace(baseURL) == "" || isOfficialGrokAPIBaseURL(baseURL) {
-			return xai.DefaultCLIBaseURL
-		}
+		// OAuth bearer credentials are subscription credentials and may only be
+		// sent to the supported CLI gateway. Stored base_url values and unsafe
+		// development overrides apply exclusively to API-key accounts.
+		return xai.DefaultCLIBaseURL
 	}
+	baseURL := a.GetCredential("base_url")
 	if baseURL != "" {
 		return baseURL
 	}
 	return xai.DefaultBaseURL
 }
 
-func isOfficialGrokAPIBaseURL(raw string) bool {
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || parsed == nil || parsed.Opaque != "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return false
+// GetGrokMediaBaseURL selects the upstream used by Grok Imagine APIs.
+//
+// OAuth media credentials have the same trust boundary as OAuth text traffic:
+// they are pinned to the supported CLI gateway even for large request bodies.
+// API-key accounts retain their configured public/custom upstream behavior.
+func (a *Account) GetGrokMediaBaseURL() string {
+	if !a.IsGrok() {
+		return ""
 	}
-	defaultURL, err := url.Parse(xai.DefaultBaseURL)
-	if err != nil {
-		return false
+	if a.IsGrokOAuth() {
+		return xai.DefaultCLIBaseURL
 	}
-	if !strings.EqualFold(parsed.Scheme, defaultURL.Scheme) || !strings.EqualFold(parsed.Hostname(), defaultURL.Hostname()) {
-		return false
-	}
-	if port := parsed.Port(); port != "" {
-		portNumber, err := strconv.Atoi(port)
-		if err != nil || portNumber != 443 {
-			return false
-		}
-	}
-	path := strings.TrimRight(parsed.Path, "/")
-	return path == "" || path == strings.TrimRight(defaultURL.Path, "/")
+	return a.GetGrokBaseURL()
 }
 
 func (a *Account) GetGrokAccessToken() string {

@@ -444,7 +444,11 @@ func resToAnthHandleFuncArgsDelta(evt *ResponsesStreamEvent, state *ResponsesEve
 		return nil
 	}
 	if tool.Name == "Read" {
-		return nil
+		if tool.ArgsEmitted || !json.Valid([]byte(tool.Arguments)) {
+			return nil
+		}
+		tool.ArgsEmitted = true
+		return []AnthropicStreamEvent{toolArgumentsDelta(tool, string(sanitizeAnthropicToolUseInput(tool.Name, tool.Arguments)))}
 	}
 	tool.ArgsEmitted = true
 

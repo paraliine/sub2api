@@ -163,6 +163,12 @@ Model authenticity: no content intervention or secondary filtering — experienc
 </td>
 </tr>
 
+<tr>
+<td width="180"><a href="http://aimzoon.com"><img src="assets/partners/logos/aimzoon.jpg" alt="aimzoon" width="150"></a></td>
+<td>Thanks to Aimzoon for sponsoring this project! <a href="http://aimzoon.com">Aimzoon</a> provides stable, cost-effective AI API access services, enabling developers to quickly connect popular AI services to coding tools such as Codex, Claude Code, and Gemini CLI. No complex configuration — faster onboarding, more stable calls, and lower costs. Ongoing promotions including discounted Codex rates and special pricing, with free trial credits upon registration, bringing AI coding into your daily workflow. <a href="http://aimzoon.com">Click here</a> to register and try it out!
+</td>
+</tr>
+
 </table>
 
 ## Overview
@@ -329,6 +335,7 @@ cd sub2api/deploy
 
 # 2. Copy environment configuration
 cp .env.example .env
+chmod 600 .env
 
 # 3. Edit configuration (generate secure passwords)
 nano .env
@@ -448,7 +455,23 @@ rm -rf data/ postgres_data/ redis_data/
 
 ---
 
-### Method 3: Build from Source
+### Method 3: Apple container (macOS)
+
+Apple-silicon Macs running macOS 26 can run the full Sub2API, PostgreSQL, and Redis stack with Apple `container` 1.1.0 or newer:
+
+```bash
+git clone https://github.com/Wei-Shaw/sub2api.git
+cd sub2api/deploy
+./apple-container.sh init
+./apple-container.sh up
+./apple-container.sh status
+```
+
+This is an operator-managed local workflow; Docker Compose remains the recommended production path. See [deploy/APPLE_CONTAINER.md](deploy/APPLE_CONTAINER.md) for lifecycle commands, persistence, upgrades, and runtime limitations.
+
+---
+
+### Method 4: Build from Source
 
 Build and run from source code for development or customization.
 
@@ -579,6 +602,34 @@ If you disable URL validation or response header filtering, harden your network 
 - Enforce TLS-only outbound traffic
 - Strip sensitive upstream response headers at the proxy
 
+#### OpenAI Responses WebSocket ingress limits
+
+`gateway.openai_ws` bounds the lifetime and aggregate count of client-facing
+Responses WebSocket sessions. These safeguards apply independently from
+per-turn user and account concurrency slots, which are released between turns.
+
+```yaml
+gateway:
+  openai_ws:
+    # Total time to receive and decompress the first client message.
+    client_first_message_timeout_seconds: 30
+    # Close a client socket idle between completed turns; 0 disables this safeguard.
+    ingress_inter_turn_idle_timeout_seconds: 300
+    # Distributed API-key limit for live client ingress sessions; 0 disables it.
+    max_ingress_connections_per_api_key: 64
+```
+
+The first-message timeout is a total read deadline. Deployments that accept
+large contexts or image-heavy requests over slower links can raise it to
+120-300 seconds. It expires before HTTP bridge routing, so bridge mode does not
+override this limit.
+
+The connection cap is coordinated through Redis using a 60-second lease that
+is refreshed every 20 seconds. A process that cannot confirm a lease for a
+full lease lifetime closes its local WebSocket rather than continuing outside
+the global cap. Use `http_bridge` for client-WebSocket/upstream-HTTP operation
+when rolling out or mitigating upstream WebSocket issues.
+
 #### ⚠️ Important: Creating the Admin Account
 
 The initial admin account is **only created via the setup wizard** (served at `http://<host>:8080` on first run). The `default.admin_email` / `default.admin_password` fields in `config.yaml` are **not used** to create it — they exist in the template for historical reasons.
@@ -650,7 +701,7 @@ Sub2API supports both Grok subscription accounts through xAI OAuth and standard 
 - Public Chat Completions targets: `/v1/chat/completions` and `/chat/completions`, forwarded to the account-type-specific xAI upstream
 - Codex CLI style Responses WebSocket ingress is accepted on the Responses targets and bridged to xAI HTTP/SSE Responses upstream
 - Text models: `grok-4.5`, `grok-4.3`, `grok-build-0.1`, `grok-composer-2.5-fast`, `grok-4.20-0309-reasoning`, `grok-4.20-0309-non-reasoning`, and `grok-4.20-multi-agent-0309`
-- Media targets for Grok groups: `/v1/images/generations`, `/images/generations`, `/v1/images/edits`, `/images/edits`, `/v1/videos/generations`, `/videos/generations`, `/v1/videos/{request_id}`, and `/videos/{request_id}`. Generation requests require the group image-generation permission.
+- Media targets for Grok groups: `/v1/images/generations`, `/images/generations`, `/v1/images/edits`, `/images/edits`, `/v1/videos/generations`, `/videos/generations`, `/v1/videos/edits`, `/videos/edits`, `/v1/videos/extensions`, `/videos/extensions`, `/v1/videos/{request_id}`, and `/videos/{request_id}`. Generation, editing, and extension requests require the group image-generation permission.
 - Media models: `grok-imagine`, `grok-imagine-image-quality`, `grok-imagine-image`, `grok-imagine-edit`, `grok-imagine-video`, and `grok-imagine-video-1.5`
 - Out of scope for this provider: TTS, transcription, browser automation, cookies, and Grok web scraping
 
@@ -690,14 +741,13 @@ For API-key accounts, select **Grok → API Key** in the create-account dialog. 
 
 ```toml
 [models]
-default = "sub2api-grok"
-web_search = "sub2api-grok"
+default = "grok"
+web_search = "grok"
 
-[model."sub2api-grok"]
+[model."grok"]
 model = "grok-4.5"
 base_url = "https://your-sub2api.example.com/v1"
-name = "Grok 4.5 via Sub2API"
-description = "Grok 4.5 through a Sub2API Grok group"
+name = "Grok 4.5"
 api_key = "sk-your-sub2api-key"
 api_backend = "responses"
 context_window = 1000000
@@ -708,7 +758,7 @@ Back up an existing `config.toml` before merging the entry. The file contains a 
 
 ```bash
 grok inspect
-grok -p "Reply with sub2api-ok" -m sub2api-grok
+grok -p "Reply with sub2api-ok" -m grok
 ```
 
 The `base_url` above is the public Sub2API URL ending in `/v1`, not `api.x.ai` or the internal xAI OAuth proxy URL.
