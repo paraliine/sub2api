@@ -40,6 +40,8 @@ const (
 	FieldIsExclusive = "is_exclusive"
 	// FieldStatus holds the string denoting the status field in the database.
 	FieldStatus = "status"
+	// FieldDuplicateOperationID holds the string denoting the duplicate_operation_id field in the database.
+	FieldDuplicateOperationID = "duplicate_operation_id"
 	// FieldPlatform holds the string denoting the platform field in the database.
 	FieldPlatform = "platform"
 	// FieldSubscriptionType holds the string denoting the subscription_type field in the database.
@@ -201,6 +203,7 @@ var Columns = []string{
 	FieldPeakRateMultiplier,
 	FieldIsExclusive,
 	FieldStatus,
+	FieldDuplicateOperationID,
 	FieldPlatform,
 	FieldSubscriptionType,
 	FieldFiveHourLimitUsd,
@@ -295,6 +298,8 @@ var (
 	DefaultStatus string
 	// StatusValidator is a validator for the "status" field. It is called by the builders before save.
 	StatusValidator func(string) error
+	// DuplicateOperationIDValidator is a validator for the "duplicate_operation_id" field. It is called by the builders before save.
+	DuplicateOperationIDValidator func(string) error
 	// DefaultPlatform holds the default value on creation for the "platform" field.
 	DefaultPlatform string
 	// PlatformValidator is a validator for the "platform" field. It is called by the builders before save.
@@ -415,6 +420,11 @@ func ByIsExclusive(opts ...sql.OrderTermOption) OrderOption {
 // ByStatus orders the results by the status field.
 func ByStatus(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldStatus, opts...).ToFunc()
+}
+
+// ByDuplicateOperationID orders the results by the duplicate_operation_id field.
+func ByDuplicateOperationID(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDuplicateOperationID, opts...).ToFunc()
 }
 
 // ByPlatform orders the results by the platform field.
