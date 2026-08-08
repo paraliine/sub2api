@@ -52,6 +52,12 @@ type officialQuotaWindowReset struct {
 	WeeklyPreviousUsedPercentKnown bool
 }
 
+type officialQuotaSourceBatch struct {
+	accountID int64
+	groups    []Group
+	due       bool
+}
+
 // OfficialQuotaSyncService periodically polls official OpenAI quota usage for
 // subscription groups configured to follow the source account reset cycle.
 type OfficialQuotaSyncService struct {
@@ -155,15 +161,14 @@ func (s *OfficialQuotaSyncService) pollOnce(ctx context.Context) {
 		return
 	}
 
-	for i := range groups {
-		group := groups[i]
-		if !s.groupDue(group, now) {
+	for _, batch := range s.sourceBatches(groups, now) {
+		if !batch.due {
 			continue
 		}
 
 		checkCtx, cancel := context.WithTimeout(ctx, officialQuotaCheckTimeout)
-		if err := s.checkGroup(checkCtx, group, now); err != nil {
-			slog.Warn("official_quota_sync_group_failed", "group_id", group.ID, "error", err)
+		if err := s.checkSourceGroups(checkCtx, batch.accountID, batch.groups, now); err != nil {
+			slog.Warn("official_quota_sync_source_failed", "account_id", batch.accountID, "group_ids", officialQuotaGroupIDs(batch.groups), "error", err)
 		}
 		cancel()
 	}
@@ -189,13 +194,7 @@ func (s *OfficialQuotaSyncService) listOfficialQuotaGroups(ctx context.Context) 
 }
 
 func (s *OfficialQuotaSyncService) groupDue(group Group, now time.Time) bool {
-	if group.ID <= 0 || !group.IsActive() || !group.IsSubscriptionType() {
-		return false
-	}
-	if group.Platform != PlatformOpenAI || group.QuotaSourceAccountID == nil || *group.QuotaSourceAccountID <= 0 {
-		return false
-	}
-	if !group.QuotaFollowOfficialReset || !group.hasOfficialQuotaResetLimit() {
+	if !isOfficialQuotaResetGroup(group) {
 		return false
 	}
 
@@ -206,14 +205,63 @@ func (s *OfficialQuotaSyncService) groupDue(group Group, now time.Time) bool {
 	return last.IsZero() || !now.Before(last.Add(interval))
 }
 
-func (s *OfficialQuotaSyncService) checkGroup(ctx context.Context, group Group, scheduledAt time.Time) error {
+// sourceBatches keeps every eligible group for a source account together. The
+// official quota snapshot is account-scoped, so a reset detected for one group
+// must be reconciled for all groups that share it.
+func (s *OfficialQuotaSyncService) sourceBatches(groups []Group, now time.Time) []officialQuotaSourceBatch {
+	batches := make([]officialQuotaSourceBatch, 0)
+	indexes := make(map[int64]int)
+	for i := range groups {
+		group := groups[i]
+		if !isOfficialQuotaResetGroup(group) {
+			continue
+		}
+
+		accountID := *group.QuotaSourceAccountID
+		index, exists := indexes[accountID]
+		if !exists {
+			index = len(batches)
+			indexes[accountID] = index
+			batches = append(batches, officialQuotaSourceBatch{accountID: accountID})
+		}
+		batches[index].groups = append(batches[index].groups, group)
+		if s.groupDue(group, now) {
+			batches[index].due = true
+		}
+	}
+	return batches
+}
+
+func isOfficialQuotaResetGroup(group Group) bool {
+	if group.ID <= 0 || !group.IsActive() || !group.IsSubscriptionType() {
+		return false
+	}
+	if group.Platform != PlatformOpenAI || group.QuotaSourceAccountID == nil || *group.QuotaSourceAccountID <= 0 {
+		return false
+	}
+	return group.QuotaFollowOfficialReset && group.hasOfficialQuotaResetLimit()
+}
+
+func officialQuotaGroupIDs(groups []Group) []int64 {
+	ids := make([]int64, 0, len(groups))
+	for _, group := range groups {
+		ids = append(ids, group.ID)
+	}
+	return ids
+}
+
+func (s *OfficialQuotaSyncService) checkSourceGroups(ctx context.Context, accountID int64, groups []Group, scheduledAt time.Time) error {
+	if len(groups) == 0 {
+		return nil
+	}
 	defer func() {
-		if s.previousCheck(group.ID).Before(scheduledAt) {
-			s.markChecked(group.ID, scheduledAt)
+		for _, group := range groups {
+			if s.previousCheck(group.ID).Before(scheduledAt) {
+				s.markChecked(group.ID, scheduledAt)
+			}
 		}
 	}()
 
-	accountID := *group.QuotaSourceAccountID
 	account, err := s.accountRepo.GetByID(ctx, accountID)
 	if err != nil {
 		return err
@@ -222,7 +270,7 @@ func (s *OfficialQuotaSyncService) checkGroup(ctx context.Context, group Group, 
 		return nil
 	}
 
-	previousCheck := s.previousCheck(group.ID)
+	previousCheck := s.previousSourceCheck(groups)
 	if previousCheck.IsZero() && account.Extra != nil {
 		previousCheck = parseExtraTime(account.Extra["official_quota_last_checked_at"])
 	}
@@ -239,10 +287,12 @@ func (s *OfficialQuotaSyncService) checkGroup(ctx context.Context, group Group, 
 	}
 	addOfficialQuotaWindowUpdates(updates, windows, now)
 	updates["official_quota_last_checked_at"] = now.Format(time.RFC3339)
-	updates["official_quota_source_group_id"] = group.ID
 
-	reset := detectOfficialQuotaReset(account.Extra, windows, group, now)
-	if reset.any() && !previousCheck.IsZero() {
+	for _, group := range groups {
+		reset := detectOfficialQuotaReset(account.Extra, windows, group, now)
+		if !reset.any() || previousCheck.IsZero() {
+			continue
+		}
 		if reset.signalMismatch() {
 			slog.Warn("official_quota_reset_signal_mismatch",
 				"group_id", group.ID,
@@ -285,8 +335,20 @@ func (s *OfficialQuotaSyncService) checkGroup(ctx context.Context, group Group, 
 		return err
 	}
 
-	s.markChecked(group.ID, now)
+	for _, group := range groups {
+		s.markChecked(group.ID, now)
+	}
 	return nil
+}
+
+func (s *OfficialQuotaSyncService) previousSourceCheck(groups []Group) time.Time {
+	var previous time.Time
+	for _, group := range groups {
+		if checked := s.previousCheck(group.ID); checked.After(previous) {
+			previous = checked
+		}
+	}
+	return previous
 }
 
 func (s *OfficialQuotaSyncService) previousCheck(groupID int64) time.Time {

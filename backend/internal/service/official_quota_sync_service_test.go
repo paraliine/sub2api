@@ -169,3 +169,43 @@ func TestDetectOfficialQuotaResetIgnoresWindowStartJitterEvenWithPercentDrop(t *
 		t.Fatal("stored official window start should suppress percent-drop reset when the new start only jitters within one minute")
 	}
 }
+
+func TestOfficialQuotaSourceBatchesKeepsSharedAccountGroupsTogether(t *testing.T) {
+	accountID := int64(207)
+	weeklyLimit := 2400.0
+	now := time.Date(2026, 7, 18, 12, 0, 0, 0, time.UTC)
+	service := NewOfficialQuotaSyncService(nil, nil, nil, nil, nil)
+	service.markChecked(10, now.Add(-5*time.Minute))
+
+	groups := []Group{
+		{
+			ID:                          6,
+			Status:                      StatusActive,
+			Platform:                    PlatformOpenAI,
+			SubscriptionType:            SubscriptionTypeSubscription,
+			QuotaSourceAccountID:        &accountID,
+			QuotaFollowOfficialReset:    true,
+			OfficialQuotaWeeklyLimitUSD: &weeklyLimit,
+		},
+		{
+			ID:                          10,
+			Status:                      StatusActive,
+			Platform:                    PlatformOpenAI,
+			SubscriptionType:            SubscriptionTypeSubscription,
+			QuotaSourceAccountID:        &accountID,
+			QuotaFollowOfficialReset:    true,
+			OfficialQuotaWeeklyLimitUSD: &weeklyLimit,
+		},
+	}
+
+	batches := service.sourceBatches(groups, now)
+	if len(batches) != 1 {
+		t.Fatalf("source batches = %d, want 1", len(batches))
+	}
+	if !batches[0].due {
+		t.Fatal("shared source batch should be due when either group is due")
+	}
+	if got := officialQuotaGroupIDs(batches[0].groups); len(got) != 2 || got[0] != 6 || got[1] != 10 {
+		t.Fatalf("shared source groups = %v, want [6 10]", got)
+	}
+}
