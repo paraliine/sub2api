@@ -96,11 +96,12 @@ type Group struct {
 	IsExclusive    bool    `json:"is_exclusive"`
 	Status         string  `json:"status"`
 
-	SubscriptionType string   `json:"subscription_type"`
-	FiveHourLimitUSD *float64 `json:"five_hour_limit_usd"`
-	DailyLimitUSD    *float64 `json:"daily_limit_usd"`
-	WeeklyLimitUSD   *float64 `json:"weekly_limit_usd"`
-	MonthlyLimitUSD  *float64 `json:"monthly_limit_usd"`
+	SubscriptionType          string   `json:"subscription_type"`
+	FiveHourLimitUSD          *float64 `json:"five_hour_limit_usd"`
+	DailyLimitUSD             *float64 `json:"daily_limit_usd"`
+	WeeklyLimitUSD            *float64 `json:"weekly_limit_usd"`
+	MonthlyLimitUSD           *float64 `json:"monthly_limit_usd"`
+	LongContextPricingEnabled bool     `json:"long_context_pricing_enabled"`
 
 	// 图片生成计费配置（仅 antigravity 平台使用）
 	AllowImageGeneration         bool    `json:"allow_image_generation"`
@@ -122,8 +123,14 @@ type Group struct {
 	VideoPrice480P     *float64 `json:"video_price_480p"`
 	VideoPrice720P     *float64 `json:"video_price_720p"`
 	VideoPrice1080P    *float64 `json:"video_price_1080p"`
+	// VideoModelPrices 可选按模型族×分辨率覆盖视频每秒单价 (USD/s)。
+	VideoModelPrices map[string]map[string]float64 `json:"video_model_prices,omitempty"`
 	// Codex alpha/search 网页搜索单次价格（USD/次）；null 表示使用默认价 0.01
-	WebSearchPricePerCall *float64 `json:"web_search_price_per_call"`
+	WebSearchPricePerCall        *float64 `json:"web_search_price_per_call"`
+	SearchPricePer1k             *float64 `json:"search_price_per_1k"`
+	AudioRealtimePricePerMin     *float64 `json:"audio_realtime_price_per_min"`
+	AudioTtsPricePerMillionChars *float64 `json:"audio_tts_price_per_million_chars"`
+	AudioSttPricePerHour         *float64 `json:"audio_stt_price_per_hour"`
 
 	// Claude Code 客户端限制
 	ClaudeCodeOnly  bool   `json:"claude_code_only"`
@@ -159,9 +166,10 @@ type AdminGroup struct {
 	// 分组利润控制（五个 token 平台分组可启用；margin/buffer 为小数存储）。
 	// 仅管理员可见：这三个字段与同响应中的 rate_multiplier 相乘即可反推出
 	// 运营方的上游成本上限，属于内部经营信息，不得下放到 dto.Group。
-	ProfitControlEnabled bool    `json:"profit_control_enabled"`
-	ProfitMinMargin      float64 `json:"profit_min_margin"`
-	ProfitSafetyBuffer   float64 `json:"profit_safety_buffer"`
+	ProfitControlEnabled bool                          `json:"profit_control_enabled"`
+	ProfitMinMargin      float64                       `json:"profit_min_margin"`
+	ProfitSafetyBuffer   float64                       `json:"profit_safety_buffer"`
+	ModelPricing         []service.ChannelModelPricing `json:"model_pricing"`
 
 	// 模型路由配置（仅 anthropic 平台使用）
 	ModelRouting        map[string][]int64 `json:"model_routing"`
@@ -176,19 +184,19 @@ type AdminGroup struct {
 	ModelsListConfig            domain.GroupModelsListConfig             `json:"models_list_config"`
 
 	// 支持的模型系列（仅 antigravity 平台使用）
-	SupportedModelScopes    []string       `json:"supported_model_scopes"`
-	AccountGroups           []AccountGroup `json:"account_groups,omitempty"`
-	AccountCount            int64          `json:"account_count,omitempty"`
-	ActiveAccountCount      int64          `json:"active_account_count,omitempty"`
-	RateLimitedAccountCount int64          `json:"rate_limited_account_count,omitempty"`
-	QuotaSourceAccountID          *int64   `json:"quota_source_account_id"`
-	OfficialQuotaFiveHourLimitUSD *float64 `json:"official_quota_five_hour_limit_usd"`
-	OfficialQuotaDailyLimitUSD    *float64 `json:"official_quota_daily_limit_usd"`
-	OfficialQuotaWeeklyLimitUSD   *float64 `json:"official_quota_weekly_limit_usd"`
-	QuotaAllocationStrategy       string   `json:"quota_allocation_strategy"`
-	QuotaFollowOfficialReset      bool     `json:"quota_follow_official_reset"`
-	QuotaLagReconcileEnabled      bool     `json:"quota_lag_reconcile_enabled"`
-	QuotaCheckIntervalMinutes     int      `json:"quota_check_interval_minutes"`
+	SupportedModelScopes          []string       `json:"supported_model_scopes"`
+	AccountGroups                 []AccountGroup `json:"account_groups,omitempty"`
+	AccountCount                  int64          `json:"account_count,omitempty"`
+	ActiveAccountCount            int64          `json:"active_account_count,omitempty"`
+	RateLimitedAccountCount       int64          `json:"rate_limited_account_count,omitempty"`
+	QuotaSourceAccountID          *int64         `json:"quota_source_account_id"`
+	OfficialQuotaFiveHourLimitUSD *float64       `json:"official_quota_five_hour_limit_usd"`
+	OfficialQuotaDailyLimitUSD    *float64       `json:"official_quota_daily_limit_usd"`
+	OfficialQuotaWeeklyLimitUSD   *float64       `json:"official_quota_weekly_limit_usd"`
+	QuotaAllocationStrategy       string         `json:"quota_allocation_strategy"`
+	QuotaFollowOfficialReset      bool           `json:"quota_follow_official_reset"`
+	QuotaLagReconcileEnabled      bool           `json:"quota_lag_reconcile_enabled"`
+	QuotaCheckIntervalMinutes     int            `json:"quota_check_interval_minutes"`
 
 	// 分组排序
 	SortOrder int `json:"sort_order"`
