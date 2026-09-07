@@ -761,12 +761,21 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 			firstClientMessage = aliasedBody
 		}
 	}
-	accountScopedFirst, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(firstClientMessage, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
-	if scopeErr != nil {
-		return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
-	}
-	if accountScoped {
-		firstClientMessage = accountScopedFirst
+	firstIdentitySnapshot := prepareCodexIdentitySnapshot(c, account, firstClientMessage)
+	if firstIdentitySnapshot != nil {
+		if snapshotFirst, changed, snapshotErr := applyCodexIdentitySnapshotToBodyRaw(firstClientMessage, firstIdentitySnapshot, true); snapshotErr != nil {
+			return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity projection", snapshotErr)
+		} else if changed {
+			firstClientMessage = snapshotFirst
+		}
+	} else {
+		accountScopedFirst, changed, scopeErr := applyCodexAccountIdentityClientMetadataRaw(firstClientMessage, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexAccountIdentityClientHeaders(c))
+		if scopeErr != nil {
+			return NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
+		}
+		if changed {
+			firstClientMessage = accountScopedFirst
+		}
 	}
 	usageMeta := newOpenAIWSPassthroughUsageMeta(initialRequestModel, firstClientMessage)
 	updatedFirst, blocked, policyErr := s.applyOpenAIFastPolicyToWSResponseCreate(ctx, account, capturedSessionModel, firstClientMessage)
@@ -1015,12 +1024,21 @@ func (s *OpenAIGatewayService) proxyResponsesWebSocketV2Passthrough(
 				}
 			}
 			if isResponseCreate || eventType == "session.update" {
-				accountScopedPayload, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(payload, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
-				if scopeErr != nil {
-					return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
-				}
-				if accountScoped {
-					payload = accountScopedPayload
+				identitySnapshot := prepareCodexIdentitySnapshot(c, account, payload)
+				if identitySnapshot != nil {
+					if snapshotPayload, changed, snapshotErr := applyCodexIdentitySnapshotToBodyRaw(payload, identitySnapshot, true); snapshotErr != nil {
+						return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity projection", snapshotErr)
+					} else if changed {
+						payload = snapshotPayload
+					}
+				} else {
+					accountScopedPayload, changed, scopeErr := applyCodexAccountIdentityClientMetadataRaw(payload, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexAccountIdentityClientHeaders(c))
+					if scopeErr != nil {
+						return payload, nil, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
+					}
+					if changed {
+						payload = accountScopedPayload
+					}
 				}
 			}
 			if isResponseCreate {

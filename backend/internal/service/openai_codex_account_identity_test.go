@@ -27,13 +27,13 @@ func TestCodexRequestBodyIdentityNamespaceIsStablePerOAuthAccount(t *testing.T) 
 	account11 := &Account{ID: 11, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"chatgpt_account_id": "chatgpt-account-11"}}
 	account19 := &Account{ID: 19, Platform: PlatformOpenAI, Type: AccountTypeOAuth, Credentials: map[string]any{"chatgpt_account_id": "chatgpt-account-19"}}
 
-	first, changed, err := applyCodexAccountIdentityClientMetadataRaw(body, account11, 77)
+	first, changed, err := applyCodexAccountIdentityClientMetadataRaw(body, account11, 77, nil)
 	require.NoError(t, err)
 	require.True(t, changed)
-	firstAgain, changed, err := applyCodexAccountIdentityClientMetadataRaw(body, account11, 77)
+	firstAgain, changed, err := applyCodexAccountIdentityClientMetadataRaw(body, account11, 77, nil)
 	require.NoError(t, err)
 	require.True(t, changed)
-	second, changed, err := applyCodexAccountIdentityClientMetadataRaw(body, account19, 77)
+	second, changed, err := applyCodexAccountIdentityClientMetadataRaw(body, account19, 77, nil)
 	require.NoError(t, err)
 	require.True(t, changed)
 	require.JSONEq(t, string(first), string(firstAgain))

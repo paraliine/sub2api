@@ -366,7 +366,7 @@ func TestFingerprintIDs_HeaderAndBody_TurnID_Consistent(t *testing.T) {
 	assert.Equal(t, float64(ids.turnStartedAtUnixMs), headerMeta["turn_started_at_unix_ms"])
 }
 
-func TestFingerprintIDs_MalformedEmbeddedMetadataRebuiltConsistently(t *testing.T) {
+func TestFingerprintIDs_MalformedEmbeddedMetadataIsOmitted(t *testing.T) {
 	account := newTestOAuthAccount(2, map[string]any{codexFingerprintModeExtraKey: "session"})
 	clientHeaders := make(http.Header)
 	clientHeaders.Set("session-id", "client-session-malformed")
@@ -385,18 +385,16 @@ func TestFingerprintIDs_MalformedEmbeddedMetadataRebuiltConsistently(t *testing.
 	}
 	require.True(t, applyCodexFingerprintClientMetadata(reqBody, ids))
 
-	var headerMeta map[string]any
-	require.NoError(t, json.Unmarshal([]byte(h.Get("x-codex-turn-metadata")), &headerMeta))
+	require.Empty(t, h.Get("x-codex-turn-metadata"))
+	require.Equal(t, ids.installationID, h.Get("x-codex-installation-id"))
+	require.Equal(t, ids.sessionID, h.Get("session-id"))
+	require.Equal(t, ids.threadID, h.Get("thread-id"))
 	clientMetadata, ok := reqBody["client_metadata"].(map[string]any)
 	require.True(t, ok)
-	bodyRaw, ok := clientMetadata["x-codex-turn-metadata"].(string)
-	require.True(t, ok)
-	var bodyMeta map[string]any
-	require.NoError(t, json.Unmarshal([]byte(bodyRaw), &bodyMeta))
-
-	for _, key := range []string{"installation_id", "session_id", "thread_id", "turn_id", "window_id", "turn_started_at_unix_ms"} {
-		assert.Equal(t, headerMeta[key], bodyMeta[key], "rebuilt metadata field %s must match", key)
-	}
+	require.NotContains(t, clientMetadata, "x-codex-turn-metadata")
+	require.Equal(t, ids.installationID, clientMetadata["x-codex-installation-id"])
+	require.Equal(t, ids.sessionID, clientMetadata["session_id"])
+	require.Equal(t, ids.threadID, clientMetadata["thread_id"])
 }
 
 // --- applyCodexFingerprintClientMetadata ---

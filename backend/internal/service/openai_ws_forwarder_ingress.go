@@ -312,7 +312,8 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 				nil,
 			)
 		}
-		if turnMetadata := strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)); turnMetadata != "" {
+		if turnMetadata := strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)); turnMetadata != "" &&
+			!gjson.GetBytes(normalized, "client_metadata."+openAIWSTurnMetadataHeader).Exists() {
 			next, setErr := applyPayloadMutation(normalized, "client_metadata."+openAIWSTurnMetadataHeader, turnMetadata)
 			if setErr != nil {
 				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket request payload", setErr)
@@ -320,12 +321,23 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			normalized = next
 		}
 		accountIdentitySourceRaw := append([]byte(nil), normalized...)
-		accountScopedPayload, accountScoped, scopeErr := applyCodexAccountIdentityClientMetadataRaw(normalized, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
-		if scopeErr != nil {
-			return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
-		}
-		if accountScoped {
-			normalized = accountScopedPayload
+		identitySnapshot := prepareCodexIdentitySnapshot(c, account, normalized)
+		if identitySnapshot != nil {
+			snapshotPayload, changed, snapshotErr := applyCodexIdentitySnapshotToBodyRaw(normalized, identitySnapshot, true)
+			if snapshotErr != nil {
+				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity projection", snapshotErr)
+			}
+			if changed {
+				normalized = snapshotPayload
+			}
+		} else {
+			accountScopedPayload, changed, scopeErr := applyCodexAccountIdentityClientMetadataRaw(normalized, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexAccountIdentityClientHeaders(c))
+			if scopeErr != nil {
+				return openAIWSClientPayload{}, NewOpenAIWSClientCloseError(coderws.StatusPolicyViolation, "invalid websocket identity metadata", scopeErr)
+			}
+			if changed {
+				normalized = accountScopedPayload
+			}
 		}
 		if responsesLite {
 			litePayload, _, liteErr := normalizeOpenAIResponsesLitePayloadForAccount(normalized, account)
@@ -1868,27 +1880,25 @@ func (s *OpenAIGatewayService) ProxyResponsesWebSocketFromClient(
 			return parseErr
 		}
 		nextRoutingFields := gjson.GetManyBytes(nextPayload.payloadRaw, "model", "service_tier")
-		if nextPayload.promptCacheKey != "" {
-			// ingress 会话在整个客户端 WS 生命周期内复用同一上游连接；
-			// prompt_cache_key 对握手头的更新仅在未来需要重新建连时生效。
-			updatedHeaders, _, updHdrErr := s.buildOpenAIWSHeaders(
-				ctx,
-				c,
-				account,
-				token,
-				wsDecision,
-				isCodexCLI,
-				turnState,
-				strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)),
-				nextPayload.promptCacheKey,
-				nextRoutingFields[0].String(),
-				nextRoutingFields[1].String(),
-			)
-			if updHdrErr != nil {
-				logOpenAIWSModeInfo("ingress_ws_update_headers_failed account_id=%d err=%v", account.ID, updHdrErr)
-			} else {
-				baseAcquireReq.Headers = updatedHeaders
-			}
+		// Keep the next reconnect projection current even when the client omits
+		// prompt_cache_key: compaction may advance window metadata independently.
+		updatedHeaders, _, updHdrErr := s.buildOpenAIWSHeaders(
+			ctx,
+			c,
+			account,
+			token,
+			wsDecision,
+			isCodexCLI,
+			turnState,
+			strings.TrimSpace(c.GetHeader(openAIWSTurnMetadataHeader)),
+			nextPayload.promptCacheKey,
+			nextRoutingFields[0].String(),
+			nextRoutingFields[1].String(),
+		)
+		if updHdrErr != nil {
+			logOpenAIWSModeInfo("ingress_ws_update_headers_failed account_id=%d err=%v", account.ID, updHdrErr)
+		} else {
+			baseAcquireReq.Headers = updatedHeaders
 		}
 		setOpenAICodexRoutingHint(baseAcquireReq.Headers, account, nextRoutingFields[0].String(), nextRoutingFields[1].String())
 		if nextPayload.previousResponseID != "" {

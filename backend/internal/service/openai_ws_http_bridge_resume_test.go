@@ -254,10 +254,10 @@ func TestOpenAIWSHTTPBridgeLaterTurn429RetriesCurrentTurnOnReplacementAccount(t 
 	require.Len(t, upstream.bodies, 3)
 	require.Contains(t, string(upstream.bodies[0]), "first")
 	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "session", "client-session"), gjson.GetBytes(upstream.bodies[1], "client_metadata.session_id").String())
-	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "thread", "client-thread"), gjson.GetBytes(upstream.bodies[1], "client_metadata.thread_id").String())
+	require.Equal(t, scopeCodexAccountIdentityValue(account, 0, "session", "client-thread"), gjson.GetBytes(upstream.bodies[1], "client_metadata.thread_id").String())
 	require.NotContains(t, string(upstream.bodies[2]), "previous_response_id")
 	require.Contains(t, string(upstream.bodies[2]), "second")
 	require.Equal(t, scopeCodexAccountIdentityValue(&nextAccount, 0, "session", "client-session"), gjson.GetBytes(upstream.bodies[2], "client_metadata.session_id").String())
-	require.Equal(t, scopeCodexAccountIdentityValue(&nextAccount, 0, "thread", "client-thread"), gjson.GetBytes(upstream.bodies[2], "client_metadata.thread_id").String())
+	require.Equal(t, scopeCodexAccountIdentityValue(&nextAccount, 0, "session", "client-thread"), gjson.GetBytes(upstream.bodies[2], "client_metadata.thread_id").String())
 	require.Empty(t, upstream.requests[2].Header.Get(openAIWSTurnStateHeader))
 }

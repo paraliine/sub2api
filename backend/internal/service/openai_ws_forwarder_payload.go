@@ -103,17 +103,7 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 				headers.Add("x-codex-beta-features", value)
 			}
 		}
-		for _, name := range [...]string{
-			"x-codex-window-id",
-			"x-codex-installation-id",
-			"session-id",
-			"thread-id",
-			"x-client-request-id",
-		} {
-			if value := c.Request.Header.Get(name); strings.TrimSpace(value) != "" {
-				headers.Set(name, value)
-			}
-		}
+		copyCodexIdentityHeaders(headers, c.Request.Header)
 	}
 	// 真实 Codex 的 WS 握手同样携带会话级 x-codex-beta-features
 	// （client.rs build_websocket_headers 复用 build_responses_headers），
@@ -144,8 +134,12 @@ func (s *OpenAIGatewayService) buildOpenAIWSHeaders(
 	if metadata := strings.TrimSpace(turnMetadata); metadata != "" {
 		headers.Set(openAIWSTurnMetadataHeader, metadata)
 	}
-	applyCodexAccountIdentityHeaders(headers, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
-	applyStagedCodexFingerprintHeaders(c, account, headers)
+	if identitySnapshot := stagedCodexIdentitySnapshot(c, account); identitySnapshot != nil {
+		applyCodexIdentitySnapshotToHeaders(headers, identitySnapshot, true)
+	} else {
+		applyCodexAccountIdentityHeaders(headers, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
+		applyStagedCodexFingerprintHeaders(c, account, headers)
+	}
 
 	if account != nil && account.UsesOpenAICodexProtocol() {
 		if err := resolveAndSetOpenAIChatGPTAccountHeaders(ctx, s.accountRepo, headers, account); err != nil {

@@ -22,6 +22,13 @@ import (
 // turn_id 等随机字段一致。
 const codexFingerprintIDsContextKey = "codex_fingerprint_ids"
 
+const codexFingerprintPromptCacheSourceKey = "codex_fingerprint_prompt_cache_source"
+
+type codexFingerprintPromptCacheSource struct {
+	accountID int64
+	raw       string
+}
+
 // stageCodexFingerprintIDs 将本 attempt 解析出的收敛 ID 暂存到 gin context。
 // 必须无条件覆写（含 nil）：failover 从收敛账号切到 off 账号时，上一账号的
 // IDs 不得残留并被误应用到新账号的出站头（typed-nil 由应用侧 nil 守卫吸收）。
@@ -352,6 +359,39 @@ func resolveCodexFingerprintIDsFromRequest(account *Account, clientHeaders http.
 	return resolveCodexFingerprintIDs(account, clientSessionID, mode)
 }
 
+// Prepare the existing snapshot before account scoping changes the source IDs.
+// Compact can identify its default cache key through headers without carrying
+// client_metadata in its body.
+func prepareCodexFingerprintIDs(c *gin.Context, account *Account, clientMetadata map[string]any, promptCacheKey string) *codexFingerprintIDs {
+	clientHeaders := codexAccountIdentityClientHeaders(c)
+	ids := resolveCodexFingerprintIDsFromRequest(account, clientHeaders)
+	if c != nil && account != nil {
+		c.Set(codexFingerprintPromptCacheSourceKey, codexFingerprintPromptCacheSource{accountID: account.ID, raw: promptCacheKey})
+	}
+	if ids != nil {
+		ids.originalBodySessionIDCaptured = true
+		if codexAccountIdentityPromptCacheKind(promptCacheKey, clientMetadata, clientHeaders) == "session" {
+			ids.originalBodySessionID = scopeCodexAccountIdentityValue(codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), "session", promptCacheKey)
+		}
+	}
+	stageCodexFingerprintIDs(c, ids)
+	return ids
+}
+
+func prepareCodexFingerprintIDsRaw(c *gin.Context, account *Account, body []byte) (*codexFingerprintIDs, error) {
+	var clientMetadata map[string]any
+	if metadata := gjson.GetBytes(body, "client_metadata"); metadata.IsObject() {
+		if err := json.Unmarshal([]byte(metadata.Raw), &clientMetadata); err != nil {
+			return nil, fmt.Errorf("decode fingerprint identity source: %w", err)
+		}
+	}
+	promptCacheKey := ""
+	if key := gjson.GetBytes(body, "prompt_cache_key"); key.Type == gjson.String {
+		promptCacheKey = key.String()
+	}
+	return prepareCodexFingerprintIDs(c, account, clientMetadata, promptCacheKey), nil
+}
+
 // applyCodexFingerprintHeaders 按预计算的收敛 ID 改写出站 HTTP 头中的设备指纹。
 // 在 buildUpstreamRequest 的白名单透传之后、enforceCodexIdentityHeaders 之前调用。
 func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
@@ -389,7 +429,7 @@ func applyCodexFingerprintHeaders(h http.Header, ids *codexFingerprintIDs) {
 
 // rewriteCodexTurnMetadataFields 解析 x-codex-turn-metadata 头中的 JSON，
 // 替换指定字段后回写。合法对象保留未指定字段（如 sandbox、thread_source）；
-// 非法/非对象值重建为最小合法 metadata，避免 flat 与 embedded identity 分裂。
+// 非法/非对象值直接省略，避免把未知 lineage/window 状态伪造成完整 metadata。
 func rewriteCodexTurnMetadataFields(h http.Header, fields map[string]any) {
 	raw := strings.TrimSpace(h.Get("x-codex-turn-metadata"))
 	if raw == "" {
@@ -397,7 +437,8 @@ func rewriteCodexTurnMetadataFields(h http.Header, fields map[string]any) {
 	}
 	var metadata map[string]any
 	if err := json.Unmarshal([]byte(raw), &metadata); err != nil || metadata == nil {
-		metadata = make(map[string]any, len(fields))
+		h.Del("x-codex-turn-metadata")
+		return
 	}
 	for k, v := range fields {
 		metadata[k] = v
@@ -445,6 +486,9 @@ func applyCodexFingerprintToClientMetadataMap(existing map[string]any, ids *code
 
 	if ids.installationID != "" {
 		existing["x-codex-installation-id"] = ids.installationID
+		if _, exists := existing["installation_id"]; exists {
+			existing["installation_id"] = ids.installationID
+		}
 		modified = true
 	}
 
@@ -581,7 +625,7 @@ func applyCodexFingerprintClientMetadataRaw(body []byte, ids *codexFingerprintID
 }
 
 // rewriteClientMetadataEmbeddedTurnMetadata 改写 client_metadata 中内嵌的
-// x-codex-turn-metadata JSON 字符串里的指定字段。非法/非对象值会重建，
+// x-codex-turn-metadata JSON 字符串里的指定字段。非法/非对象值直接省略，
 // 避免 flat client_metadata 与 embedded metadata 暴露两套身份。
 func rewriteClientMetadataEmbeddedTurnMetadata(clientMetadata map[string]any, fields map[string]any) {
 	raw, ok := clientMetadata["x-codex-turn-metadata"].(string)
@@ -590,7 +634,8 @@ func rewriteClientMetadataEmbeddedTurnMetadata(clientMetadata map[string]any, fi
 	}
 	var metadata map[string]any
 	if err := json.Unmarshal([]byte(raw), &metadata); err != nil || metadata == nil {
-		metadata = make(map[string]any, len(fields))
+		delete(clientMetadata, "x-codex-turn-metadata")
+		return
 	}
 	for k, v := range fields {
 		metadata[k] = v

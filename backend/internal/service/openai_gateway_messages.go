@@ -42,6 +42,7 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 	if _, err := s.prepareCodexAccountIdentitySource(ctx, c, account); err != nil {
 		return nil, err
 	}
+	prepareCodexIdentitySnapshot(c, account, body)
 
 	// 入口分流（国产供应商 Anthropic 协议）：上游为供应商原生 Anthropic 端点时，
 	// /v1/messages 请求零转换直通（仅模型名映射 + 少量 body 清洗），完整保留
@@ -234,7 +235,12 @@ func (s *OpenAIGatewayService) ForwardAsAnthropic(
 		if codexResult.PromptCacheKey != "" {
 			promptCacheKey = codexResult.PromptCacheKey
 		}
-		applyCodexAccountIdentityClientMetadataMap(reqBody, codexAccountIdentitySource(c, account), apiKeyID)
+		if identitySnapshot := stagedCodexIdentitySnapshot(c, account); identitySnapshot != nil {
+			completeCodexIdentitySnapshotPromptCache(c, account, identitySnapshot, promptCacheKey)
+			applyCodexIdentitySnapshotToBodyMap(reqBody, identitySnapshot, true)
+		} else {
+			applyCodexAccountIdentityClientMetadataMap(reqBody, codexAccountIdentitySource(c, account), apiKeyID, codexAccountIdentityClientHeaders(c))
+		}
 		delete(reqBody, "prompt_cache_key")
 		if shouldAutoInjectPromptCacheKeyForCompat(upstreamModel) {
 			compatTurnState = s.getOpenAICompatSessionTurnState(ctx, c, account, promptCacheKey)

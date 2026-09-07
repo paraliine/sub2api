@@ -80,6 +80,7 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 	if _, err := s.prepareCodexAccountIdentitySource(ctx, c, account); err != nil {
 		return nil, err
 	}
+	prepareCodexIdentitySnapshot(c, account, body)
 
 	restrictionResult := s.detectCodexClientRestriction(c, account, body)
 	logCodexCLIOnlyDetection(ctx, c, account, getAPIKeyIDFromContext(c), restrictionResult, body)
@@ -284,7 +285,12 @@ func (s *OpenAIGatewayService) forwardAsChatCompletions(
 		} else if promptCacheKey != "" {
 			reqBody["prompt_cache_key"] = promptCacheKey
 		}
-		applyCodexAccountIdentityClientMetadataMap(reqBody, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c))
+		if identitySnapshot := stagedCodexIdentitySnapshot(c, account); identitySnapshot != nil {
+			completeCodexIdentitySnapshotPromptCache(c, account, identitySnapshot, promptCacheKey)
+			applyCodexIdentitySnapshotToBodyMap(reqBody, identitySnapshot, true)
+		} else {
+			applyCodexAccountIdentityClientMetadataMap(reqBody, codexAccountIdentitySource(c, account), getAPIKeyIDFromContext(c), codexAccountIdentityClientHeaders(c))
+		}
 		responsesBody, err = json.Marshal(reqBody)
 		if err != nil {
 			return nil, fmt.Errorf("remarshal after codex transform: %w", err)
