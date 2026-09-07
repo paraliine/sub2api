@@ -5,6 +5,7 @@ export default {
     title: 'My Subscriptions',
     viewDetails: 'View subscription details',
     activeCount: '{count} active subscription(s)',
+    fiveHour: '5-Hour',
     daily: 'Daily',
     weekly: 'Weekly',
     monthly: 'Monthly',

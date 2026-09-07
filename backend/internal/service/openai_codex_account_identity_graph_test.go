@@ -72,6 +72,17 @@ func TestCodexAccountIdentityGraphRootAcrossTransports(t *testing.T) {
 	c.Request.Header.Set(openAIWSTurnMetadataHeader, string(embedded))
 	originalHeaders := c.Request.Header.Clone()
 	result := rewriteCodexAccountGraphForTest(t, metadata, c.Request.Header, account, 77)
+	clientMetadata := make(map[string]any, len(metadata)+1)
+	for key, value := range metadata {
+		clientMetadata[key] = value
+	}
+	clientMetadata[openAIWSTurnMetadataHeader] = string(embedded)
+	snapshotBody, err := json.Marshal(map[string]any{
+		"client_metadata":  clientMetadata,
+		"prompt_cache_key": "same-raw",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, prepareCodexIdentitySnapshot(c, account, snapshotBody))
 	require.Equal(t, result["session_id"], result["thread_id"])
 	require.Equal(t, result["thread_id"], result["x-client-request-id"])
 	require.NotEqual(t, "same-raw", result["session_id"])
@@ -100,6 +111,9 @@ func TestCodexAccountIdentityGraphRootAcrossTransports(t *testing.T) {
 			var projected map[string]any
 			require.NoError(t, json.Unmarshal([]byte(headers.Get(openAIWSTurnMetadataHeader)), &projected))
 			for field := range metadata {
+				if field == "x-client-request-id" {
+					continue
+				}
 				require.Equal(t, result[field], projected[field], field)
 			}
 			require.Equal(t, result["installation_id"], headers.Get("x-codex-installation-id"))
